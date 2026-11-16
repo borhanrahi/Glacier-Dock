@@ -11,7 +11,9 @@ mod config;
 mod win32;
 
 use serde::Serialize;
-use tauri::{AppHandle, RunEvent, WebviewWindow};
+use tauri::{
+    AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 
 use config::{AppConfig, DockSize};
 
@@ -152,6 +154,162 @@ fn wallpaper_accent() -> Option<String> {
 }
 
 #[tauri::command]
+fn installed_apps(limit: Option<usize>) -> Vec<serde_json::Value> {
+    #[cfg(windows)]
+    {
+        return win32::apps::installed_apps(limit.unwrap_or(400))
+            .into_iter()
+            .map(|app| serde_json::to_value(app).unwrap_or_default())
+            .collect();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = limit;
+        Vec::new()
+    }
+}
+
+#[tauri::command]
+fn launch_app(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return win32::apps::launch(&path);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("launching apps is only supported on Windows".into())
+    }
+}
+
+/// Persist the dock edge for a monitor (drag-to-edge snapping).
+#[tauri::command]
+fn set_dock_edge(app: AppHandle, monitor: String, edge: config::Edge) {
+    let mut cfg = config::load(&app);
+    let _ = config::dock_for_monitor(&mut cfg, &monitor);
+    if let Some(dock) = cfg.docks.iter_mut().find(|dock| dock.monitor == monitor) {
+        dock.edge = edge;
+    }
+    config::save(&app, &cfg);
+    #[cfg(windows)]
+    win32::monitors::sync_docks(&app);
+}
+
+/// Drag-to-edge snapping: the webview reports where the drag ended, Rust picks
+/// the closest monitor edge and repositions every dock.
+#[tauri::command]
+fn snap_dock_edge(app: AppHandle, window: WebviewWindow, x: f64, y: f64) {
+    #[cfg(windows)]
+    {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let Ok(position) = window.outer_position() else {
+            return;
+        };
+        let screen_x = position.x + (x * scale).round() as i32;
+        let screen_y = position.y + (y * scale).round() as i32;
+
+        let monitor = win32::monitors::monitor_for_point(screen_x, screen_y)
+            .or_else(|| win32::monitors::cached_monitors().into_iter().next());
+        let Some(monitor) = monitor else { return };
+
+        let candidates = [
+            (config::Edge::Left, (screen_x - monitor.x).abs()),
+            (
+                config::Edge::Right,
+                (screen_x - (monitor.x + monitor.width)).abs(),
+            ),
+            (config::Edge::Top, (screen_y - monitor.y).abs()),
+            (
+                config::Edge::Bottom,
+                (screen_y - (monitor.y + monitor.height)).abs(),
+            ),
+        ];
+        let edge = candidates
+            .iter()
+            .min_by_key(|(_, distance)| *distance)
+            .map(|(edge, _)| *edge)
+            .unwrap_or(config::Edge::Bottom);
+
+        let mut cfg = config::load(&app);
+        let _ = config::dock_for_monitor(&mut cfg, &monitor.device);
+        if let Some(dock) = cfg.docks.iter_mut().find(|dock| dock.monitor == monitor.device) {
+            dock.edge = edge;
+        }
+        config::save(&app, &cfg);
+        win32::monitors::sync_docks(&app);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, window, x, y);
+    }
+}
+
+#[tauri::command]
+fn open_spotlight(app: AppHandle) {
+    let _ = ensure_window(&app, "spotlight", "Glacier Spotlight", 760.0, 480.0);
+}
+
+#[tauri::command]
+fn open_launcher(app: AppHandle) {
+    let _ = ensure_window(&app, "launcher", "Glacier Launchpad", 880.0, 600.0);
+}
+
+#[tauri::command]
+fn hide_window(window: WebviewWindow) {
+    let _ = window.hide();
+}
+
+/// Create (or re-show) a utility window: spotlight, launcher, flyout.
+fn ensure_window(
+    app: &AppHandle,
+    label: &str,
+    title: &str,
+    width: f64,
+    height: f64,
+) -> Option<WebviewWindow> {
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Some(window);
+    }
+
+    let window = WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::App(std::path::PathBuf::from(format!("index.html?win={label}"))),
+    )
+    .title(title)
+    .inner_size(width, height)
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .visible(false)
+    .build()
+    .ok()?;
+
+    let _ = window.center();
+    let _ = window.show();
+    let _ = window.set_focus();
+    Some(window)
+}
+
+/// `Alt + Space`: hide when open, otherwise summon Spotlight.
+pub fn toggle_spotlight(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("spotlight") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            return;
+        }
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let _ = ensure_window(app, "spotlight", "Glacier Spotlight", 760.0, 480.0);
+}
+
+#[tauri::command]
 fn restore_native_taskbar() {
     #[cfg(windows)]
     win32::taskbar::restore();
@@ -195,7 +353,14 @@ pub fn run() {
             glass_frame,
             wallpaper_accent,
             restore_native_taskbar,
-            monitors
+            monitors,
+            installed_apps,
+            launch_app,
+            set_dock_edge,
+            snap_dock_edge,
+            open_spotlight,
+            open_launcher,
+            hide_window
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -212,6 +377,7 @@ pub fn run() {
                 win32::monitors::spawn_display_watcher(handle.clone());
                 win32::monitors::sync_docks(&handle);
                 win32::liquid_glass::start(handle.clone());
+                win32::hotkey::spawn(handle.clone());
             }
 
             // Non-Windows builds (CI, future ports) still need a window. On

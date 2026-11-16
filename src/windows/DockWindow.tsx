@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import { AppFolderTile } from "../components/AppFolderTile";
+import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
+import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
+import { attachFisheye } from "../sdk/fisheye";
 import { LiquidRefraction } from "../styles/liquid-refraction";
 import {
   applyAccent,
@@ -10,6 +14,7 @@ import {
   applyTintAlpha,
   startSolarSchedule,
 } from "../styles/theme";
+import { appHue, initials, type InstalledApp } from "../utils/apps";
 
 interface DockLayout {
   label: string;
@@ -27,19 +32,23 @@ interface DockLayout {
 interface Appearance {
   preset: string;
   tintAlpha: number;
-  accent: string;
   solarAuto: boolean;
   solarDayPreset: string;
   solarNightPreset: string;
   chameleonTint: boolean;
-  latitude?: number;
-  longitude?: number;
 }
 
 interface AppConfig {
   appearance: Appearance;
   latitude: number;
   longitude: number;
+}
+
+interface FolderGroup {
+  id: string;
+  name: string;
+  color: string;
+  apps: InstalledApp[];
 }
 
 const EDGE_ALIGN: Record<DockLayout["edge"], string> = {
@@ -49,26 +58,21 @@ const EDGE_ALIGN: Record<DockLayout["edge"], string> = {
   right: "items-center justify-end pr-[var(--glacier-edge-margin)]",
 };
 
-function useLabel(): string {
-  const fromQuery = new URLSearchParams(window.location.search).get("dock");
-  if (fromQuery) return fromQuery;
-  try {
-    return (
-      (window as unknown as Record<string, any>).__TAURI_INTERNALS__?.metadata?.currentWindow
-        ?.label ?? "dock"
-    );
-  } catch {
-    return "dock";
-  }
-}
-
 export default function DockWindow() {
-  const label = useLabel();
   const pillRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const glassRef = useRef<LiquidRefraction | null>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(0);
+  const draggedApp = useRef<InstalledApp | null>(null);
+
   const [layout, setLayout] = useState<DockLayout | null>(null);
+  const [apps, setApps] = useState<InstalledApp[]>([]);
+  const [folders, setFolders] = useState<FolderGroup[]>([]);
+  const [shelf, setShelf] = useState<ShelfItem[]>([]);
+  const [shelfOpen, setShelfOpen] = useState(false);
+  const [island, setIsland] = useState<IslandNotification | null>(null);
+  const [running, setRunning] = useState<string[]>([]);
+  const [draggingDock, setDraggingDock] = useState(false);
   const [clock, setClock] = useState(() => new Date());
 
   useEffect(() => {
@@ -78,11 +82,9 @@ export default function DockWindow() {
 
   // Layout + appearance from Rust.
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
         const next = await invoke<DockLayout>("dock_layout");
-        if (cancelled) return;
         setLayout(next);
         applyDockMetrics({
           iconSize: next.iconSize,
@@ -93,46 +95,76 @@ export default function DockWindow() {
         if (next.accent) applyAccent(next.accent);
 
         const cfg = await invoke<AppConfig>("get_config");
-        if (cancelled) return;
-        applyPreset(cfg.appearance.preset);
+        applyPreset(next.highContrast ? "black" : cfg.appearance.preset);
         applyTintAlpha(cfg.appearance.tintAlpha);
-        if (next.highContrast) {
-          applyPreset("black");
-        }
-      } catch {
-        // Browser dev server: keep the defaults from glacier-tokens.css.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
-  // Solar auto day/night + chameleon tint.
-  useEffect(() => {
-    let stop: (() => void) | undefined;
-    (async () => {
-      try {
-        const cfg = await invoke<AppConfig>("get_config");
-        stop = startSolarSchedule({
+        if (cfg.appearance.chameleonTint) {
+          const accent = await invoke<string | null>("wallpaper_accent");
+          if (accent) applyAccent(accent);
+        }
+
+        startSolarSchedule({
           enabled: cfg.appearance.solarAuto,
           latitude: cfg.latitude,
           longitude: cfg.longitude,
           dayPreset: cfg.appearance.solarDayPreset,
           nightPreset: cfg.appearance.solarNightPreset,
         });
-        if (cfg.appearance.chameleonTint) {
-          const accent = await invoke<string | null>("wallpaper_accent");
-          if (accent) applyAccent(accent);
-        }
       } catch {
-        /* ignore outside Tauri */
+        /* browser dev server */
       }
     })();
-    return () => stop?.();
   }, []);
 
-  // Report the pill rect to Rust: WM_NCHITTEST headroom + capture region.
+  // Pinned apps.
+  useEffect(() => {
+    invoke<InstalledApp[]>("installed_apps", { limit: 24 })
+      .then((list) => setApps(list.slice(0, 8)))
+      .catch(() => setApps([]));
+  }, []);
+
+  // Live notifications arrive from Rust (UserNotificationListener / timers).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<IslandNotification>("glacier://island", (event) => setIsland(event.payload))
+      .then((fn) => (unlisten = fn))
+      .catch(() => {});
+    return () => unlisten?.();
+  }, []);
+
+  // OS drag-and-drop -> Drop Shelf.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    (async () => {
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+          if (event.payload.type === "enter" || event.payload.type === "over") {
+            setShelfOpen(true);
+          } else if (event.payload.type === "drop") {
+            const paths = event.payload.paths ?? [];
+            if (paths.length > 0) {
+              setShelf((current) => {
+                const next = [...current];
+                for (const path of paths) {
+                  if (!next.some((item) => item.path === path)) next.push(toShelfItem(path));
+                }
+                return next;
+              });
+              setShelfOpen(true);
+            }
+          } else if (event.payload.type === "leave") {
+            setShelfOpen((open) => open || false);
+          }
+        });
+      } catch {
+        /* browser preview */
+      }
+    })();
+    return () => unlisten?.();
+  }, []);
+
+  // Report the pill rect: WM_NCHITTEST headroom + DXGI capture region.
   useEffect(() => {
     const pill = pillRef.current;
     if (!pill) return;
@@ -148,11 +180,7 @@ export default function DockWindow() {
     report();
     const observer = new ResizeObserver(report);
     observer.observe(pill);
-    window.addEventListener("resize", report);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", report);
-    };
+    return () => observer.disconnect();
   }, [layout]);
 
   // Liquid glass capture -> WebGL2 refraction.
@@ -162,7 +190,6 @@ export default function DockWindow() {
     if (!canvas || !pill || !layout) return;
 
     const glass = new LiquidRefraction(canvas);
-    glassRef.current = glass;
     if (!glass.supported) return;
 
     const syncSize = () => {
@@ -171,7 +198,6 @@ export default function DockWindow() {
       glass.render();
     };
     syncSize();
-
     const observer = new ResizeObserver(syncSize);
     observer.observe(pill);
 
@@ -191,34 +217,113 @@ export default function DockWindow() {
         glass.uploadFrame(new Uint8Array(buffer, 8), width, height);
         glass.render();
       } catch {
-        /* capture unavailable (driver, secure desktop) — CSS frost remains */
+        /* capture unavailable */
       }
-    }).then((unlistenFn) => {
-      if (disposed) unlistenFn();
-      else unlisten = unlistenFn;
-    });
+    })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
 
     return () => {
       disposed = true;
       unlisten?.();
       observer.disconnect();
       glass.dispose();
-      glassRef.current = null;
     };
   }, [layout]);
+
+  // 1.32x parabolic fisheye wave over the icon row.
+  useEffect(() => {
+    const row = rowRef.current;
+    if (!row || !layout) return;
+    const vertical = layout.edge === "left" || layout.edge === "right";
+    return attachFisheye(
+      row,
+      () => Array.from(row.querySelectorAll<HTMLElement>("[data-icon]")),
+      {
+        maxScale: Math.min(1.35, Math.max(1.28, 1.32)),
+        radius: 140,
+        orientation: vertical ? "vertical" : "horizontal",
+        displacement: 8,
+      },
+    );
+  }, [layout, apps, folders]);
+
+  const launch = useCallback(async (app: InstalledApp) => {
+    setRunning((current) => (current.includes(app.path) ? current : [...current, app.path]));
+    try {
+      await invoke("launch_app", { path: app.path });
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Drag the dock body to another screen edge.
+  const onPillPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("[data-icon]") || target.closest("[data-no-drag]")) return;
+    setDraggingDock(true);
+  };
+
+  useEffect(() => {
+    if (!draggingDock) return;
+    const onUp = (event: PointerEvent) => {
+      setDraggingDock(false);
+      invoke("snap_dock_edge", { x: event.clientX, y: event.clientY }).catch(() => {});
+    };
+    window.addEventListener("pointerup", onUp, { once: true });
+    return () => window.removeEventListener("pointerup", onUp);
+  }, [draggingDock]);
+
+  const createFolder = (target: InstalledApp) => {
+    const source = draggedApp.current;
+    draggedApp.current = null;
+    if (!source || source.path === target.path) return;
+    setFolders((current) => [
+      ...current,
+      {
+        id: `folder-${Date.now()}`,
+        name: "New Folder",
+        color: "#38BDF8",
+        apps: [source, target],
+      },
+    ]);
+    setApps((current) => current.filter((app) => app.path !== source.path && app.path !== target.path));
+  };
 
   const edge = layout?.edge ?? "bottom";
   const vertical = edge === "left" || edge === "right";
   const attached = layout?.shape === "attached";
   const full = layout?.widthMode === "full";
-
   const time = clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const pinned = useMemo(() => apps, [apps]);
 
   return (
     <div className={`flex h-full w-full ${EDGE_ALIGN[edge]}`}>
+      <GlacierIsland
+        notification={island}
+        onDismiss={() => setIsland(null)}
+        onReply={() => setIsland(null)}
+      />
+      <DropzoneShelf
+        items={shelf}
+        open={shelfOpen && shelf.length > 0}
+        onRemove={(path) => setShelf((items) => items.filter((item) => item.path !== path))}
+        onClear={() => {
+          setShelf([]);
+          setShelfOpen(false);
+        }}
+        onReveal={() => {}}
+      />
+
       <div
         ref={pillRef}
-        className="relative flex items-center gap-3 overflow-hidden px-4 backdrop-blur-[28px]"
+        onPointerDown={onPillPointerDown}
+        className={`relative flex items-center gap-2 overflow-visible px-3 backdrop-blur-[28px] ${
+          draggingDock ? "ring-2 ring-[var(--glacier-accent)]" : ""
+        }`}
         style={{
           height: "var(--glacier-bar-height)",
           width: full ? "100%" : undefined,
@@ -226,6 +331,7 @@ export default function DockWindow() {
           background: "var(--glacier-surface)",
           boxShadow: attached ? "none" : "var(--glacier-shadow)",
           flexDirection: vertical ? "column" : "row",
+          cursor: draggingDock ? "grabbing" : "default",
         }}
       >
         <canvas
@@ -235,18 +341,124 @@ export default function DockWindow() {
           style={{ borderRadius: attached ? 0 : "var(--glacier-radius)" }}
         />
 
-        <span
-          className="relative inline-block size-2 shrink-0 rounded-full"
-          style={{ background: "var(--glacier-accent)" }}
-        />
+        <div
+          ref={rowRef}
+          className={`relative flex items-end gap-1.5 ${vertical ? "flex-col" : "flex-row"}`}
+          style={{ paddingBlock: vertical ? 6 : 0, paddingInline: vertical ? 0 : 4 }}
+        >
+          {pinned.map((app) => (
+            <button
+              key={app.path}
+              data-icon
+              type="button"
+              draggable
+              onDragStart={() => (draggedApp.current = app)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                createFolder(app);
+              }}
+              onClick={() => launch(app)}
+              title={app.name}
+              className="relative grid shrink-0 place-items-center rounded-[10px] transition-transform duration-150 active:scale-90"
+              style={{
+                width: "var(--glacier-icon-base)",
+                height: "var(--glacier-icon-base)",
+                transform:
+                  "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+                transformOrigin: vertical ? "center left" : "center bottom",
+                background: `hsl(${appHue(app.name)} 68% 50% / 0.9)`,
+                color: "#08111d",
+                fontSize: "11px",
+                fontWeight: 700,
+              }}
+            >
+              {initials(app.name)}
+              {running.includes(app.path) && (
+                <span
+                  className="absolute -bottom-1 h-[3px] w-4 rounded-full"
+                  style={{ background: "var(--glacier-accent)" }}
+                />
+              )}
+            </button>
+          ))}
+
+          {folders.map((folder) => (
+            <div key={folder.id} data-icon>
+              <AppFolderTile
+                name={folder.name}
+                color={folder.color}
+                apps={folder.apps}
+                vertical={vertical}
+                onLaunch={launch}
+                onRename={(name) =>
+                  setFolders((current) =>
+                    current.map((item) => (item.id === folder.id ? { ...item, name } : item)),
+                  )
+                }
+                onColor={(color) =>
+                  setFolders((current) =>
+                    current.map((item) => (item.id === folder.id ? { ...item, color } : item)),
+                  )
+                }
+                onRemoveApp={(path) =>
+                  setFolders((current) =>
+                    current.map((item) =>
+                      item.id === folder.id
+                        ? { ...item, apps: item.apps.filter((app) => app.path !== path) }
+                        : item,
+                    ),
+                  )
+                }
+              />
+            </div>
+          ))}
+
+          <button
+            data-icon
+            data-no-drag
+            type="button"
+            title="App Library"
+            onClick={() => invoke("open_launcher").catch(() => {})}
+            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            style={{
+              width: "var(--glacier-icon-base)",
+              height: "var(--glacier-icon-base)",
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
+            }}
+          >
+            ▦
+          </button>
+
+          <button
+            data-icon
+            data-no-drag
+            type="button"
+            title="Spotlight (Alt + Space)"
+            onClick={() => invoke("open_spotlight").catch(() => {})}
+            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            style={{
+              width: "var(--glacier-icon-base)",
+              height: "var(--glacier-icon-base)",
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
+            }}
+          >
+            ⌕
+          </button>
+        </div>
+
         {!vertical && (
-          <span className="relative text-xs font-medium tracking-wide opacity-90">
-            Glacier Dock · {label}
-          </span>
+          <div
+            data-no-drag
+            className="relative ml-1 select-none text-xs font-semibold tabular-nums opacity-90"
+          >
+            {time}
+          </div>
         )}
-        <span className="relative ml-auto text-xs font-semibold tabular-nums opacity-90">
-          {time}
-        </span>
       </div>
     </div>
   );

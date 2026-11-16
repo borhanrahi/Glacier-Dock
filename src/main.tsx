@@ -14,15 +14,20 @@ import "./styles/glacier-tokens.css";
  * root renders. Windows are lazily imported so unused ones cost nothing.
  */
 const DockWindow = lazy(() => import("./windows/DockWindow"));
+const SpotlightWindow = lazy(() => import("./windows/SpotlightWindow"));
+const LauncherWindow = lazy(() => import("./windows/LauncherWindow"));
 
 /** Docks are created per display as `dock-0`, `dock-1`, … */
 function resolveWindow(label: string): LazyExoticComponent<ComponentType> | null {
   if (label.startsWith("dock")) return DockWindow;
+  if (label === "spotlight") return SpotlightWindow;
+  if (label === "launcher") return LauncherWindow;
   return null;
 }
 
 function currentLabel(): string {
-  const fromQuery = new URLSearchParams(window.location.search).get("dock");
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get("win") ?? params.get("dock");
   if (fromQuery) return fromQuery;
   try {
     const internals = (window as unknown as Record<string, any>).__TAURI_INTERNALS__;

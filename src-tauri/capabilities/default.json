@@ -3,5 +3,14 @@
   "identifier": "default",
   "description": "Default permissions for Glacier Dock windows.",
   "windows": ["*"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-outer-position",
+    "core:window:allow-cursor-position"
+  ]
 }

@@ -113,6 +113,13 @@ body,
   user-select: none;
 }
 
+/* Widget and settings editors must stay editable despite the global rule. */
+input,
+textarea,
+select {
+  user-select: text;
+}
+
 /* Semantic status glow used by widget alert thresholds (AI quota, CPU > 90%) */
 .glacier-status-glow-warn {
   box-shadow:

@@ -18,6 +18,8 @@ const SpotlightWindow = lazy(() => import("./windows/SpotlightWindow"));
 const LauncherWindow = lazy(() => import("./windows/LauncherWindow"));
 const TaskManagerWindow = lazy(() => import("./windows/TaskManagerWindow"));
 const PreviewWindow = lazy(() => import("./windows/PreviewWindow"));
+const SettingsWindow = lazy(() => import("./windows/SettingsWindow"));
+const WidgetFlyoutWindow = lazy(() => import("./windows/WidgetFlyoutWindow"));
 
 /** Docks are created per display as `dock-0`, `dock-1`, … */
 function resolveWindow(label: string): LazyExoticComponent<ComponentType> | null {
@@ -26,6 +28,8 @@ function resolveWindow(label: string): LazyExoticComponent<ComponentType> | null
   if (label === "launcher") return LauncherWindow;
   if (label === "task-manager") return TaskManagerWindow;
   if (label === "preview") return PreviewWindow;
+  if (label === "settings") return SettingsWindow;
+  if (label === "widget-flyout") return WidgetFlyoutWindow;
   return null;
 }
 

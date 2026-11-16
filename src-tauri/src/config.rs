@@ -238,6 +238,52 @@ impl Default for AutomationSettings {
     }
 }
 
+/// Local telemetry bus: what the sampler publishes to widgets.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct TelemetrySettings {
+    pub enabled: bool,
+    /// Sampling interval for the 1 Hz default; clamped to 250..=10000 ms.
+    pub interval_ms: u32,
+    pub top_process: bool,
+    pub network: bool,
+}
+
+impl Default for TelemetrySettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_ms: 1_000,
+            top_process: true,
+            network: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AdvancedSettings {
+    pub hardware_acceleration: bool,
+    pub start_with_windows: bool,
+    pub check_updates: bool,
+    /// Community widget index endpoint (empty = bundled catalog only).
+    pub store_url: String,
+    /// Seconds the flyout stays open after the pointer leaves.
+    pub flyout_linger_ms: u32,
+}
+
+impl Default for AdvancedSettings {
+    fn default() -> Self {
+        Self {
+            hardware_acceleration: true,
+            start_with_windows: false,
+            check_updates: true,
+            store_url: String::new(),
+            flyout_linger_ms: 450,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
@@ -247,6 +293,10 @@ pub struct AppConfig {
     pub profiles: Vec<ContextProfile>,
     pub active_profile: String,
     pub automations: AutomationSettings,
+    pub telemetry: TelemetrySettings,
+    pub advanced: AdvancedSettings,
+    /// Widget ids pinned to every dock's strip (click → flyout).
+    pub dock_widgets: Vec<String>,
     /// Latitude/longitude for the solar auto day/night schedule.
     pub latitude: f64,
     pub longitude: f64,
@@ -261,6 +311,9 @@ impl Default for AppConfig {
             profiles: default_profiles(),
             active_profile: "Default".into(),
             automations: AutomationSettings::default(),
+            telemetry: TelemetrySettings::default(),
+            advanced: AdvancedSettings::default(),
+            dock_widgets: vec!["cpu-monitor".into(), "clock-large".into(), "battery-status".into()],
             latitude: 0.0,
             longitude: 0.0,
         }

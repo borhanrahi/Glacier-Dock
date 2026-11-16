@@ -15,6 +15,7 @@ import {
   startSolarSchedule,
 } from "../styles/theme";
 import { appHue, initials, type InstalledApp } from "../utils/apps";
+import { CATEGORY_META, widgetMeta } from "../widgets/registry";
 
 interface DockLayout {
   label: string;
@@ -42,6 +43,7 @@ interface AppConfig {
   appearance: Appearance;
   latitude: number;
   longitude: number;
+  dockWidgets?: string[];
 }
 
 interface FolderGroup {
@@ -74,6 +76,7 @@ export default function DockWindow() {
   const [running, setRunning] = useState<string[]>([]);
   const [draggingDock, setDraggingDock] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
+  const [widgets, setWidgets] = useState<string[]>([]);
   const [clock, setClock] = useState(() => new Date());
   const hoverTimer = useRef<number | undefined>(undefined);
 
@@ -99,6 +102,7 @@ export default function DockWindow() {
         const cfg = await invoke<AppConfig>("get_config");
         applyPreset(next.highContrast ? "black" : cfg.appearance.preset);
         applyTintAlpha(cfg.appearance.tintAlpha);
+        setWidgets(cfg.dockWidgets ?? []);
 
         if (cfg.appearance.chameleonTint) {
           const accent = await invoke<string | null>("wallpaper_accent");
@@ -411,6 +415,34 @@ export default function DockWindow() {
             </button>
           ))}
 
+          {widgets.map((id) => {
+            const meta = widgetMeta(id);
+            if (!meta) return null;
+            return (
+              <button
+                key={id}
+                data-icon
+                data-no-drag
+                type="button"
+                title={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
+                onClick={() =>
+                  invoke("open_widget", {
+                    id,
+                    width: meta.width,
+                    height: meta.height,
+                  }).catch(() => {})
+                }
+                className="grid shrink-0 place-items-center rounded-[9px] bg-white/10 text-[12px] transition-transform duration-150 active:scale-90"
+                style={{
+                  width: "calc(var(--glacier-icon-base) * 0.72)",
+                  height: "calc(var(--glacier-icon-base) * 0.72)",
+                }}
+              >
+                {CATEGORY_META[meta.category].glyph}
+              </button>
+            );
+          })}
+
           {folders.map((folder) => (
             <div key={folder.id} data-icon>
               <AppFolderTile
@@ -476,6 +508,24 @@ export default function DockWindow() {
             }}
           >
             ▤
+          </button>
+
+          <button
+            data-icon
+            data-no-drag
+            type="button"
+            title="Glacier Settings"
+            onClick={() => invoke("open_settings").catch(() => {})}
+            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            style={{
+              width: "var(--glacier-icon-base)",
+              height: "var(--glacier-icon-base)",
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
+            }}
+          >
+            ⚙
           </button>
 
           <button

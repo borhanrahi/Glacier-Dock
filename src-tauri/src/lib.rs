@@ -476,6 +476,301 @@ fn hide_app_preview(app: AppHandle) {
     let _ = window.hide();
 }
 
+/// Latest telemetry bus frame (sampled on demand when the bus is idle).
+#[tauri::command]
+fn telemetry_snapshot(app: AppHandle) -> serde_json::Value {
+    let cfg = config::load(&app);
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::telemetry::current(cfg.telemetry.interval_ms as u64))
+            .unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cfg;
+        serde_json::json!({
+            "seq": 0,
+            "timestampMs": 0,
+            "cpuPercent": 0,
+            "ramUsedMb": 0,
+            "ramTotalMb": 0,
+            "ramPercent": 0
+        })
+    }
+}
+
+/// Adapters reported by the OS, newest counters included.
+#[tauri::command]
+fn network_interfaces() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::telemetry::interfaces()).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!([])
+    }
+}
+
+/// TCP handshake latency (ms). ICMP needs raw sockets; a connect to the
+/// service port measures the same path without administrator rights.
+pub fn tcp_latency(host: &str, port: u16, timeout_ms: u64) -> Result<u128, String> {
+    use std::net::{TcpStream, ToSocketAddrs};
+    use std::time::{Duration, Instant};
+
+    let target = format!("{host}:{port}");
+    let addresses: Vec<_> = target
+        .to_socket_addrs()
+        .map_err(|err| format!("cannot resolve {host}: {err}"))?
+        .collect();
+    let Some(address) = addresses.first() else {
+        return Err(format!("no address for {host}"));
+    };
+    let started = Instant::now();
+    TcpStream::connect_timeout(address, Duration::from_millis(timeout_ms))
+        .map_err(|err| format!("{host} unreachable: {err}"))?;
+    Ok(started.elapsed().as_millis())
+}
+
+#[tauri::command]
+fn ping_host(host: String, port: Option<u16>, timeout_ms: Option<u64>) -> Result<u128, String> {
+    tcp_latency(&host, port.unwrap_or(443), timeout_ms.unwrap_or(2_500).clamp(200, 10_000))
+}
+
+#[tauri::command]
+fn resolve_host(host: String) -> Result<Vec<String>, String> {
+    use std::net::ToSocketAddrs;
+    let mut out: Vec<String> = (host.as_str(), 0u16)
+        .to_socket_addrs()
+        .map_err(|err| err.to_string())?
+        .map(|addr| addr.ip().to_string())
+        .collect();
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+/// Remote JSON/text feed for widgets. Restricted to http(s), 2 MiB cap.
+#[tauri::command]
+fn fetch_text(url: String) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        if !url.starts_with("https://") && !url.starts_with("http://") {
+            return Err("feed url must be http(s)".into());
+        }
+        return win32::community_store::fetch(&url);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("remote feeds are only available on Windows".into())
+    }
+}
+
+/// Per-widget persisted key/value store (widgets never touch the filesystem).
+#[tauri::command]
+fn widget_storage_get(id: String) -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return win32::community_store::storage_read(&id);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = id;
+        serde_json::json!({})
+    }
+}
+
+#[tauri::command]
+fn widget_storage_set(id: String, value: serde_json::Value) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return win32::community_store::storage_write(&id, value);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (id, value);
+        Err("widget storage is only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn store_installed() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::community_store::installed()).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!([])
+    }
+}
+
+#[tauri::command]
+fn store_install(package: serde_json::Value) -> Result<serde_json::Value, String> {
+    #[cfg(windows)]
+    {
+        let package: win32::community_store::WidgetPackage =
+            serde_json::from_value(package).map_err(|err| err.to_string())?;
+        let installed = win32::community_store::install(package)?;
+        return Ok(serde_json::to_value(installed).unwrap_or_default());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = package;
+        Err("the community store is only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn store_install_url(url: String) -> Result<serde_json::Value, String> {
+    #[cfg(windows)]
+    {
+        let installed = win32::community_store::install_from_url(&url)?;
+        return Ok(serde_json::to_value(installed).unwrap_or_default());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("the community store is only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn store_uninstall(id: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return win32::community_store::uninstall(&id);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = id;
+        Err("the community store is only available on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn store_index() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return win32::community_store::index();
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!([])
+    }
+}
+
+#[tauri::command]
+fn store_refresh(app: AppHandle, url: Option<String>) -> Result<serde_json::Value, String> {
+    #[cfg(windows)]
+    {
+        let url = url
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| config::load(&app).advanced.store_url.clone());
+        return win32::community_store::refresh_index(&url);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, url);
+        Err("the community store is only available on Windows".into())
+    }
+}
+
+/// Push an island notification (used by widgets via `glacier.notify`).
+#[tauri::command]
+fn notify(app: AppHandle, title: String, body: String, kind: Option<String>) {
+    use tauri::Emitter;
+    let payload = serde_json::json!({
+        "id": format!("widget-{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)),
+        "app": "Glacier",
+        "title": title,
+        "body": body,
+        "kind": kind.unwrap_or_else(|| "message".into()),
+    });
+    let _ = app.emit("glacier://island", payload);
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) {
+    // Settings is a normal app window: decorated, resizable, not always-on-top.
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(
+        &app,
+        "settings",
+        WebviewUrl::App(std::path::PathBuf::from("index.html?win=settings")),
+    )
+    .title("Glacier Settings")
+    .inner_size(1040.0, 700.0)
+    .min_inner_size(880.0, 600.0)
+    .decorations(true)
+    .resizable(true)
+    .transparent(false)
+    .center()
+    .build();
+}
+
+/// Widget flyout: a small glass panel anchored by the dock that hosts one
+/// catalog widget by id (`index.html?win=widget-flyout&widget=<id>`).
+#[tauri::command]
+fn open_widget(app: AppHandle, id: String, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
+    let width = width.unwrap_or(320.0).clamp(180.0, 640.0);
+    let height = height.unwrap_or(240.0).clamp(120.0, 640.0);
+    let window = ensure_window_query(
+        &app,
+        "widget-flyout",
+        "Glacier Widget",
+        width,
+        height,
+        &format!("&widget={}", url_encode(&id)),
+    )
+    .ok_or_else(|| "could not open the widget flyout".to_string())?;
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+
+    // Anchor just above the bottom edge of the primary display, near the dock.
+    #[cfg(windows)]
+    {
+        let monitors = win32::monitors::cached_monitors();
+        let monitor = monitors
+            .iter()
+            .find(|monitor| monitor.primary)
+            .or_else(|| monitors.first());
+        if let Some(monitor) = monitor {
+            let x = monitor.x + (monitor.width - width as i32) / 2;
+            let y = monitor.y + monitor.height - height as i32 - 84;
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+    }
+
+    {
+        use tauri::Emitter;
+        let _ = app.emit("glacier://widget-flyout", serde_json::json!({ "id": id }));
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+    Ok(())
+}
+
+fn url_encode(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c.to_string()
+            } else {
+                format!("%{:02X}", c as u32)
+            }
+        })
+        .collect()
+}
+
 /// Create (or re-show) a utility window: spotlight, launcher, flyout.
 fn ensure_window(
     app: &AppHandle,
@@ -483,6 +778,17 @@ fn ensure_window(
     title: &str,
     width: f64,
     height: f64,
+) -> Option<WebviewWindow> {
+    ensure_window_query(app, label, title, width, height, "")
+}
+
+fn ensure_window_query(
+    app: &AppHandle,
+    label: &str,
+    title: &str,
+    width: f64,
+    height: f64,
+    query: &str,
 ) -> Option<WebviewWindow> {
     if let Some(window) = app.get_webview_window(label) {
         let _ = window.show();
@@ -493,7 +799,9 @@ fn ensure_window(
     let window = WebviewWindowBuilder::new(
         app,
         label,
-        WebviewUrl::App(std::path::PathBuf::from(format!("index.html?win={label}"))),
+        WebviewUrl::App(std::path::PathBuf::from(format!(
+            "index.html?win={label}{query}"
+        ))),
     )
     .title(title)
     .inner_size(width, height)
@@ -593,7 +901,23 @@ pub fn run() {
             show_preview_for_image,
             hide_app_preview,
             automation_meeting,
-            automation_quota
+            automation_quota,
+            telemetry_snapshot,
+            network_interfaces,
+            ping_host,
+            resolve_host,
+            fetch_text,
+            widget_storage_get,
+            widget_storage_set,
+            store_installed,
+            store_install,
+            store_install_url,
+            store_uninstall,
+            store_index,
+            store_refresh,
+            notify,
+            open_settings,
+            open_widget
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -614,6 +938,7 @@ pub fn run() {
                 win32::profiles::spawn(handle.clone());
                 win32::automations::spawn(handle.clone());
                 win32::systray::install(&handle);
+                win32::telemetry::spawn(handle.clone());
             }
 
             // Non-Windows builds (CI, future ports) still need a window. On

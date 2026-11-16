@@ -7,6 +7,8 @@ pub mod apps;
 #[cfg(windows)]
 pub mod automations;
 #[cfg(windows)]
+pub mod community_store;
+#[cfg(windows)]
 pub mod dwm_preview;
 #[cfg(windows)]
 pub mod hit_test;
@@ -26,5 +28,7 @@ pub mod liquid_glass;
 pub mod monitors;
 #[cfg(windows)]
 pub mod taskbar;
+#[cfg(windows)]
+pub mod telemetry;
 #[cfg(windows)]
 pub mod wallpaper;

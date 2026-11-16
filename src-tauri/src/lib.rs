@@ -991,6 +991,10 @@ pub fn run() {
                         eprintln!("glacier: could not hide the native taskbar: {err}");
                     }
                     win32::taskbar::spawn_watchdog();
+                } else if win32::taskbar::hides_taskbar() {
+                    // A previous version may have left the taskbar hidden; an
+                    // upgrade must bring it back without needing a reboot.
+                    win32::taskbar::restore();
                 }
                 win32::monitors::spawn_display_watcher(handle.clone());
                 win32::monitors::sync_docks(&handle);

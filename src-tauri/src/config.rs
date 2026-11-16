@@ -315,6 +315,8 @@ pub fn default_pinned_apps() -> Vec<PinnedApp> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
+    /// Bumped when a stored config needs fixing up on load.
+    pub config_version: u32,
     pub replace_taskbar: bool,
     pub appearance: Appearance,
     pub docks: Vec<DockInstance>,
@@ -338,6 +340,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            config_version: 1,
             // Off by default: hiding the user's taskbar is opt-in, never a
             // surprise after install.
             replace_taskbar: false,
@@ -383,6 +386,16 @@ pub fn load(app: &AppHandle) -> AppConfig {
         Err(_) => AppConfig::default(),
     };
 
+    let mut migrated = false;
+
+    // Builds before 0.2.x hid the taskbar by default and left it on in saved
+    // configs. Turn it back on once so an upgrade returns the user's taskbar.
+    if cfg.config_version < 1 {
+        cfg.replace_taskbar = false;
+        cfg.config_version = 1;
+        migrated = true;
+    }
+
     // First launch (or an upgrade from a build without pins): write the
     // defaults once so the dock has something sane to show and so emptying the
     // dock later is respected.
@@ -391,6 +404,10 @@ pub fn load(app: &AppHandle) -> AppConfig {
             cfg.pinned_apps = default_pinned_apps();
         }
         cfg.pins_initialized = true;
+        migrated = true;
+    }
+
+    if migrated {
         save(app, &cfg);
     }
 

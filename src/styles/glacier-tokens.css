@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+/*
+ * glacier-tokens.css
+ * Single :root custom-property sheet for Glacier Dock.
+ * Every window and widget reads these variables, so theme/opacity switches
+ * repaint in <0.1ms with zero React re-renders.
+ */
+
+@theme {
+  --color-accent-primary: #38bdf8;
+  --color-accent-warm: #facc15;
+  --font-sans:
+    "Segoe UI Variable Display", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root,
+html[data-glacier-preset="liquid-glass"] {
+  --glacier-theme-preset: "liquid-glass";
+  --glacier-surface: rgba(16, 20, 28, 0.58);
+  --glacier-elevated: rgba(26, 31, 41, 0.86);
+  --glacier-border: rgba(255, 255, 255, 0.14);
+  --glacier-specular: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  --glacier-text: #eef2f8;
+  --glacier-text-muted: rgba(238, 242, 248, 0.62);
+  --glacier-accent: #38bdf8;
+  --glacier-tint-alpha: 0.58;
+  --glacier-saturation: 180%;
+  --glacier-blur: 28px;
+}
+
+html[data-glacier-preset="ios-glass"] {
+  --glacier-theme-preset: "ios-glass";
+  --glacier-surface: rgba(255, 255, 255, 0.24);
+  --glacier-elevated: rgba(255, 255, 255, 0.38);
+  --glacier-border: rgba(255, 255, 255, 0.45);
+  --glacier-specular: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+  --glacier-text: #0f172a;
+  --glacier-text-muted: rgba(15, 23, 42, 0.6);
+  --glacier-accent: #38bdf8;
+  --glacier-tint-alpha: 0.24;
+  --glacier-saturation: 140%;
+  --glacier-blur: 34px;
+}
+
+html[data-glacier-preset="midnight"] {
+  --glacier-theme-preset: "midnight";
+  --glacier-surface: #141824;
+  --glacier-elevated: #1b2030;
+  --glacier-border: rgba(56, 189, 248, 0.14);
+  --glacier-specular: inset 0 1px 0 rgba(56, 189, 248, 0.18);
+  --glacier-text: #e7edf7;
+  --glacier-text-muted: rgba(231, 237, 247, 0.6);
+  --glacier-accent: #38bdf8;
+  --glacier-tint-alpha: 1;
+  --glacier-saturation: 100%;
+  --glacier-blur: 22px;
+}
+
+html[data-glacier-preset="black"] {
+  --glacier-theme-preset: "black";
+  --glacier-surface: #0d0f14;
+  --glacier-elevated: #181a20;
+  --glacier-border: rgba(255, 255, 255, 0.08);
+  --glacier-specular: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --glacier-text: #f4f6fa;
+  --glacier-text-muted: rgba(244, 246, 250, 0.56);
+  --glacier-accent: #38bdf8;
+  --glacier-tint-alpha: 1;
+  --glacier-saturation: 100%;
+  --glacier-blur: 0px;
+}
+
+html[data-glacier-preset="white"] {
+  --glacier-theme-preset: "white";
+  --glacier-surface: #f4f6fa;
+  --glacier-elevated: #ffffff;
+  --glacier-border: rgba(15, 23, 42, 0.09);
+  --glacier-specular: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --glacier-text: #0f172a;
+  --glacier-text-muted: rgba(15, 23, 42, 0.58);
+  --glacier-accent: #0284c7;
+  --glacier-tint-alpha: 1;
+  --glacier-saturation: 100%;
+  --glacier-blur: 0px;
+}
+
+:root {
+  /* Shape + geometry, driven from Settings -> Appearance */
+  --glacier-radius: 18px;
+  --glacier-edge-margin: 10px;
+  --glacier-icon-base: 42px;
+  --glacier-bar-height: 52px;
+  --glacier-icon-scale: 1;
+  --glacier-icon-lift: 0px;
+  --glacier-backdrop-mode: "liquid-glass";
+
+  --glacier-shadow:
+    0 0 0 1px var(--glacier-border), 0 12px 32px rgba(0, 0, 0, 0.38);
+  --glacier-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  color: var(--glacier-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Semantic status glow used by widget alert thresholds (AI quota, CPU > 90%) */
+.glacier-status-glow-warn {
+  box-shadow:
+    0 0 0 1px rgba(250, 204, 21, 0.5),
+    0 0 22px rgba(250, 204, 21, 0.28);
+}
+
+.glacier-status-glow-critical {
+  box-shadow:
+    0 0 0 1px rgba(248, 113, 113, 0.55),
+    0 0 22px rgba(248, 113, 113, 0.32);
+}

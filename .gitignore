@@ -1,0 +1,19 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Runtime state journal written by the Win32 taskbar module
+taskbar-state.txt
+
+# Local build blueprint / design spec, not part of the shipped project
+glacier_dock_master_architecture_*.md
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

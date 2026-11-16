@@ -13,4 +13,4 @@ cd src-tauri && cargo check
 
 ## License
 
-MIT
+MIT 2.0

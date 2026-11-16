@@ -11,23 +11,7 @@
   },
   "app": {
     "withGlobalTauri": false,
-    "windows": [
-      {
-        "label": "dock",
-        "title": "Glacier Dock",
-        "url": "index.html",
-        "width": 900,
-        "height": 120,
-        "transparent": true,
-        "decorations": false,
-        "shadow": false,
-        "resizable": false,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "focus": false,
-        "visible": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

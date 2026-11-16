@@ -1,4 +1,10 @@
-import { StrictMode, Suspense, lazy, type ComponentType, type LazyExoticComponent } from "react";
+import {
+  StrictMode,
+  Suspense,
+  lazy,
+  type ComponentType,
+  type LazyExoticComponent,
+} from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/glacier-tokens.css";
 
@@ -7,13 +13,18 @@ import "./styles/glacier-tokens.css";
  * Tauri opens every window as its own webview; the label decides which React
  * root renders. Windows are lazily imported so unused ones cost nothing.
  */
-const windows: Record<string, LazyExoticComponent<ComponentType>> = {
-  dock: lazy(() => import("./windows/DockWindow")),
-};
+const DockWindow = lazy(() => import("./windows/DockWindow"));
+
+/** Docks are created per display as `dock-0`, `dock-1`, … */
+function resolveWindow(label: string): LazyExoticComponent<ComponentType> | null {
+  if (label.startsWith("dock")) return DockWindow;
+  return null;
+}
 
 function currentLabel(): string {
+  const fromQuery = new URLSearchParams(window.location.search).get("dock");
+  if (fromQuery) return fromQuery;
   try {
-    // Present only inside a Tauri webview; falls back to "dock" in a browser.
     const internals = (window as unknown as Record<string, any>).__TAURI_INTERNALS__;
     return internals?.metadata?.currentWindow?.label ?? "dock";
   } catch {
@@ -22,7 +33,7 @@ function currentLabel(): string {
 }
 
 const label = currentLabel();
-const WindowRoot = windows[label];
+const WindowRoot = resolveWindow(label);
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>

@@ -34,7 +34,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": "all",
     "shortDescription": "Free, open-source liquid glass dock for Windows",
     "licenseFile": "../LICENSE",
     "icon": [

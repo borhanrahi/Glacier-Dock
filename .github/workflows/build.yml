@@ -1,0 +1,101 @@
+name: Build
+
+# Windows 10/11, macOS and Linux (deb / rpm / AppImage).
+#
+# Note on Windows: GitHub-hosted runners are Windows Server images. The closest
+# available analogues are windows-2022 (Windows 11 kernel, Server 2022) and
+# windows-2019 (Windows 10 kernel, Server 2019), so both are built to cover the
+# Win11 and Win10 WebView2/runtime targets. Verifying on real Win10/Win11
+# machines requires a self-hosted runner.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}-${{ matrix.artifact }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows 11 (x64, Server 2022)
+            os: windows-2022
+            bundles: nsis,msi
+            artifact: windows11-x64
+          - name: Windows 10 (x64, Server 2019)
+            os: windows-2019
+            bundles: nsis,msi
+            artifact: windows10-x64
+          - name: macOS (Apple Silicon)
+            os: macos-14
+            bundles: app,dmg
+            artifact: macos-arm64
+          - name: macOS (Intel)
+            os: macos-13
+            bundles: app,dmg
+            artifact: macos-x64
+          - name: Linux (x64, Ubuntu 22.04)
+            os: ubuntu-22.04
+            bundles: deb,rpm,appimage
+            artifact: linux-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # webkit2gtk 4.1 + libayatana appindicator + rpmbuild for the RPM target.
+      # Built on Ubuntu 22.04 (glibc 2.35) so the AppImage/deb run on Ubuntu 22.04+,
+      # Debian 12+, Fedora 36+, Arch and other current distros.
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            curl wget file patchelf rpm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: ${{ matrix.artifact }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --bundles ${{ matrix.bundles }}
+
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: glacier-dock-${{ matrix.artifact }}
+          path: src-tauri/target/release/bundle/**
+          if-no-files-found: error
+          retention-days: 30

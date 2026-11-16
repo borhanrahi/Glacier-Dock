@@ -6,6 +6,7 @@ import { AppFolderTile } from "../components/AppFolderTile";
 import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
 import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
 import { attachFisheye } from "../sdk/fisheye";
+import { useAppIcon } from "../sdk/hooks";
 import { LiquidRefraction } from "../styles/liquid-refraction";
 import {
   applyAccent,
@@ -14,7 +15,7 @@ import {
   applyTintAlpha,
   startSolarSchedule,
 } from "../styles/theme";
-import { appHue, initials, type InstalledApp } from "../utils/apps";
+import { appHue, initials, type InstalledApp, type PinnedApp } from "../utils/apps";
 import { CATEGORY_META, widgetMeta } from "../widgets/registry";
 
 interface DockLayout {
@@ -59,6 +60,36 @@ const EDGE_ALIGN: Record<DockLayout["edge"], string> = {
   left: "items-center justify-start pl-[var(--glacier-edge-margin)]",
   right: "items-center justify-end pr-[var(--glacier-edge-margin)]",
 };
+
+/** Real shell icon, with a deterministic initial tile as the fallback. */
+function AppIcon({ app }: { app: InstalledApp }) {
+  const icon = useAppIcon(app.path);
+
+  if (icon) {
+    return (
+      <img
+        src={icon}
+        alt=""
+        draggable={false}
+        className="size-full select-none object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
+      />
+    );
+  }
+
+  return (
+    <span
+      className="grid size-full place-items-center rounded-[10px]"
+      style={{
+        background: `hsl(${appHue(app.name)} 68% 50% / 0.9)`,
+        color: "#08111d",
+        fontSize: "11px",
+        fontWeight: 700,
+      }}
+    >
+      {initials(app.name)}
+    </span>
+  );
+}
 
 export default function DockWindow() {
   const pillRef = useRef<HTMLDivElement>(null);
@@ -122,11 +153,29 @@ export default function DockWindow() {
     })();
   }, []);
 
-  // Pinned apps.
+  // Pinned apps come from config, never from scanning the Start Menu. Editing
+  // them in Settings (or pinning from the App Library) re-emits this event.
   useEffect(() => {
-    invoke<InstalledApp[]>("installed_apps", { limit: 24 })
-      .then((list) => setApps(list.slice(0, 8)))
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+
+    invoke<PinnedApp[]>("pinned_apps")
+      .then((list) => {
+        if (alive) setApps(list);
+      })
       .catch(() => setApps([]));
+
+    listen<PinnedApp[]>("glacier://pins", (event) => setApps(event.payload))
+      .then((fn) => {
+        if (alive) unlisten = fn;
+        else fn();
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
   }, []);
 
   // Live notifications arrive from Rust (UserNotificationListener / timers).
@@ -282,11 +331,19 @@ export default function DockWindow() {
   }, [layout, apps, folders]);
 
   const launch = useCallback(async (app: InstalledApp) => {
-    setRunning((current) => (current.includes(app.path) ? current : [...current, app.path]));
     try {
       await invoke("launch_app", { path: app.path });
-    } catch {
-      /* ignore */
+      setRunning((current) => (current.includes(app.path) ? current : [...current, app.path]));
+    } catch (error) {
+      // Never fail silently: the tile lights up only when the shell really
+      // handed off to the app, and a failure explains itself in the island.
+      setIsland({
+        id: `launch-${Date.now()}`,
+        app: "Glacier Dock",
+        title: `Could not open ${app.name}`,
+        body: error instanceof Error ? error.message : String(error),
+        kind: "message",
+      });
     }
   }, []);
 
@@ -399,13 +456,9 @@ export default function DockWindow() {
                 transform:
                   "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
                 transformOrigin: vertical ? "center left" : "center bottom",
-                background: `hsl(${appHue(app.name)} 68% 50% / 0.9)`,
-                color: "#08111d",
-                fontSize: "11px",
-                fontWeight: 700,
               }}
             >
-              {initials(app.name)}
+              <AppIcon app={app} />
               {running.includes(app.path) && (
                 <span
                   className="absolute -bottom-1 h-[3px] w-4 rounded-full"

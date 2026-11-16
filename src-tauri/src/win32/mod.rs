@@ -5,6 +5,8 @@
 #[cfg(windows)]
 pub mod apps;
 #[cfg(windows)]
+pub mod autostart;
+#[cfg(windows)]
 pub mod automations;
 #[cfg(windows)]
 pub mod community_store;
@@ -12,6 +14,8 @@ pub mod community_store;
 pub mod dwm_preview;
 #[cfg(windows)]
 pub mod hit_test;
+#[cfg(windows)]
+pub mod icons;
 #[cfg(windows)]
 pub mod hotkey;
 #[cfg(windows)]

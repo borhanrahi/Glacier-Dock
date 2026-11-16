@@ -10,7 +10,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 import glacier, { type InstalledWidget } from "../sdk/bridge";
-import { useTelemetry } from "../sdk/hooks";
+import { useAppIcon, useTelemetry } from "../sdk/hooks";
+import type { InstalledApp, PinnedApp } from "../utils/apps";
 import { applyAccent, applyPreset, applyTintAlpha } from "../styles/theme";
 import {
   CATEGORY_META,
@@ -88,6 +89,7 @@ interface SettingsConfig {
   automations: AutomationCfg;
   telemetry: TelemetryCfg;
   advanced: AdvancedCfg;
+  pinnedApps: PinnedApp[];
   dockWidgets: string[];
   latitude: number;
   longitude: number;
@@ -516,6 +518,121 @@ function AppearanceTab({
   );
 }
 
+function PinRow({
+  app,
+  first,
+  last,
+  onUp,
+  onDown,
+  onRemove,
+}: {
+  app: PinnedApp;
+  first: boolean;
+  last: boolean;
+  onUp: () => void;
+  onDown: () => void;
+  onRemove: () => void;
+}) {
+  const icon = useAppIcon(app.path);
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-white/5 px-2 py-1.5">
+      <span className="grid size-6 shrink-0 place-items-center">
+        {icon ? (
+          <img src={icon} alt="" draggable={false} className="size-6 object-contain" />
+        ) : (
+          <span className="size-6 rounded-md bg-white/10" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[11px]">{app.name}</span>
+      <button type="button" disabled={first} onClick={onUp} className="rounded px-1 text-[10px] disabled:opacity-25">
+        ↑
+      </button>
+      <button type="button" disabled={last} onClick={onDown} className="rounded px-1 text-[10px] disabled:opacity-25">
+        ↓
+      </button>
+      <button type="button" onClick={onRemove} className="rounded px-1 text-[10px] hover:text-red-300">
+        ×
+      </button>
+    </div>
+  );
+}
+
+/** Dock contents: explicit pins, edited here instead of auto-detected. */
+function PinnedAppsSection({
+  cfg,
+  patch,
+}: {
+  cfg: SettingsConfig;
+  patch: <K extends keyof SettingsConfig>(key: K, value: SettingsConfig[K]) => void;
+}) {
+  const [library, setLibrary] = useState<InstalledApp[]>([]);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    invoke<InstalledApp[]>("installed_apps", { limit: 400 })
+      .then(setLibrary)
+      .catch(() => setLibrary([]));
+  }, []);
+
+  const pins = cfg.pinnedApps ?? [];
+  const setPins = (next: PinnedApp[]) => patch("pinnedApps", next);
+  const has = (path: string) => pins.some((pin) => pin.path === path);
+
+  const matches = query.trim()
+    ? library.filter((app) => app.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 6)
+    : library.slice(0, 6);
+
+  const move = (index: number, delta: number) => {
+    const next = [...pins];
+    const target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    setPins(next);
+  };
+
+  return (
+    <Section title="Dock apps" hint={`${pins.length} pinned`}>
+      {pins.length === 0 && (
+        <p className="text-[11px] opacity-50">The dock is empty. Add an app below.</p>
+      )}
+      {pins.map((app, index) => (
+        <PinRow
+          key={app.path}
+          app={app}
+          first={index === 0}
+          last={index === pins.length - 1}
+          onUp={() => move(index, -1)}
+          onDown={() => move(index, 1)}
+          onRemove={() => setPins(pins.filter((pin) => pin.path !== app.path))}
+        />
+      ))}
+
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search installed apps to add…"
+        className="w-full rounded-md bg-white/5 px-2.5 py-1.5 text-[11px] outline-none placeholder:opacity-40"
+      />
+      <div className="space-y-1">
+        {matches.map((app) => (
+          <div key={app.path} className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-white/5">
+            <span className="min-w-0 flex-1 truncate text-[11px] opacity-80">{app.name}</span>
+            <button
+              type="button"
+              disabled={has(app.path)}
+              onClick={() => setPins([...pins, { name: app.name, path: app.path }])}
+              className="rounded bg-[var(--glacier-accent)]/30 px-2 py-0.5 text-[10px] hover:bg-[var(--glacier-accent)]/50 disabled:opacity-30"
+            >
+              {has(app.path) ? "pinned" : "add"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 function DockTab({
   cfg,
   patch,
@@ -542,6 +659,8 @@ function DockTab({
           Restore the Windows taskbar now
         </button>
       </Section>
+
+      <PinnedAppsSection cfg={cfg} patch={patch} />
 
       <Section title="Geometry">
         <Segmented
@@ -1052,7 +1171,7 @@ function AdvancedTab({
         />
         <Toggle
           label="Start with Windows"
-          hint="Registers the app under the current user's Run key."
+          hint="Adds a Run entry, so Task Manager → Startup and Windows Settings → Apps → Startup can turn it on or off too."
           checked={advanced.startWithWindows}
           onChange={(value) => setAdvanced({ startWithWindows: value })}
         />

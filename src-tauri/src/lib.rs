@@ -59,7 +59,62 @@ fn get_config(app: AppHandle) -> AppConfig {
 fn save_config(app: AppHandle, cfg: AppConfig) {
     config::save(&app, &cfg);
     #[cfg(windows)]
-    win32::monitors::sync_docks(&app);
+    {
+        win32::monitors::sync_docks(&app);
+        // Apply the startup toggle for real so it shows up in Task Manager and
+        // Windows Settings → Apps → Startup, where it can also be turned off.
+        if let Err(error) = win32::autostart::apply(cfg.advanced.start_with_windows) {
+            eprintln!("glacier: startup entry not updated: {error}");
+        }
+    }
+    {
+        use tauri::Emitter;
+        let _ = app.emit("glacier://pins", cfg.pinned_apps.clone());
+    }
+}
+
+/// Apps pinned to every dock, in user order.
+#[tauri::command]
+fn pinned_apps(app: AppHandle) -> Vec<config::PinnedApp> {
+    config::load(&app).pinned_apps
+}
+
+/// Replace the dock contents (add, remove, reorder).
+#[tauri::command]
+fn set_pinned_apps(app: AppHandle, apps: Vec<config::PinnedApp>) {
+    let mut cfg = config::load(&app);
+    cfg.pinned_apps = apps;
+    cfg.pins_initialized = true;
+    config::save(&app, &cfg);
+    use tauri::Emitter;
+    let _ = app.emit("glacier://pins", cfg.pinned_apps);
+}
+
+/// PNG data URL for a shortcut's shell icon, used by the dock and library.
+#[tauri::command]
+fn app_icon(path: String) -> Option<String> {
+    #[cfg(windows)]
+    {
+        return win32::icons::icon_data_url(&path);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// Whether the Run-key startup entry is currently present.
+#[tauri::command]
+fn autostart_registered() -> bool {
+    #[cfg(windows)]
+    {
+        return win32::autostart::is_registered();
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// Layout for the dock that owns this window (edge, size metrics, accent).
@@ -883,6 +938,10 @@ pub fn run() {
             monitors,
             installed_apps,
             launch_app,
+            app_icon,
+            pinned_apps,
+            set_pinned_apps,
+            autostart_registered,
             set_dock_edge,
             snap_dock_edge,
             open_spotlight,

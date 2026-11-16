@@ -1,6 +1,42 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export interface InstalledApp {
   name: string;
   path: string;
+}
+
+/** An app the user pinned to the dock, in order. */
+export interface PinnedApp {
+  name: string;
+  path: string;
+}
+
+const iconCache = new Map<string, string | null>();
+const iconPending = new Map<string, Promise<string | null>>();
+
+/**
+ * Shell icon for a shortcut as a PNG data URL, cached per path. Resolves to
+ * `null` when the shell has no icon (or outside the desktop app); callers fall
+ * back to initial tiles.
+ */
+export function loadAppIcon(path: string): Promise<string | null> {
+  if (iconCache.has(path)) return Promise.resolve(iconCache.get(path) ?? null);
+  const pending = iconPending.get(path);
+  if (pending) return pending;
+
+  const request = invoke<string | null>("app_icon", { path })
+    .then((icon) => {
+      iconCache.set(path, icon);
+      return icon;
+    })
+    .catch(() => {
+      iconCache.set(path, null);
+      return null;
+    })
+    .finally(() => iconPending.delete(path));
+
+  iconPending.set(path, request);
+  return request;
 }
 
 export type Category =

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { useAppIcon } from "../sdk/hooks";
 import {
   CATEGORIES,
   appHue,
@@ -10,6 +11,7 @@ import {
   searchApps,
   type Category,
   type InstalledApp,
+  type PinnedApp,
 } from "../utils/apps";
 
 async function hideSelf() {
@@ -20,12 +22,36 @@ async function hideSelf() {
   }
 }
 
+/** Shell icon with the initial-tile fallback, sized by the parent. */
+function AppGlyph({ app, rounded }: { app: InstalledApp; rounded?: string }) {
+  const icon = useAppIcon(app.path);
+  if (icon) {
+    return (
+      <img
+        src={icon}
+        alt=""
+        draggable={false}
+        className={`size-full select-none object-contain ${rounded ?? "rounded-md"}`}
+      />
+    );
+  }
+  return (
+    <span
+      className={`grid size-full place-items-center text-[8px] font-bold ${rounded ?? "rounded-md"}`}
+      style={{ background: `hsl(${appHue(app.name)} 70% 52% / 0.85)`, color: "#08111d" }}
+    >
+      {initials(app.name)}
+    </span>
+  );
+}
+
 /**
  * Categorized Start app library: instant fuzzy search plus category cards with
  * `2 x 2` nested icon previews.
  */
 export default function LauncherWindow() {
   const [apps, setApps] = useState<InstalledApp[]>([]);
+  const [pinned, setPinned] = useState<PinnedApp[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Category | null>(null);
 
@@ -33,7 +59,23 @@ export default function LauncherWindow() {
     invoke<InstalledApp[]>("installed_apps", { limit: 500 })
       .then(setApps)
       .catch(() => setApps([]));
+    invoke<PinnedApp[]>("pinned_apps")
+      .then(setPinned)
+      .catch(() => setPinned([]));
   }, []);
+
+  const togglePin = async (app: InstalledApp) => {
+    const already = pinned.some((entry) => entry.path === app.path);
+    const next = already
+      ? pinned.filter((entry) => entry.path !== app.path)
+      : [...pinned, { name: app.name, path: app.path }];
+    setPinned(next);
+    try {
+      await invoke("set_pinned_apps", { apps: next });
+    } catch {
+      /* the dock keeps its previous contents */
+    }
+  };
 
   const grouped = useMemo(() => {
     const map = new Map<Category, InstalledApp[]>();
@@ -110,15 +152,8 @@ export default function LauncherWindow() {
                   >
                     <div className="grid grid-cols-2 gap-1">
                       {items.slice(0, 4).map((app) => (
-                        <span
-                          key={app.path}
-                          className="grid aspect-square place-items-center rounded-md text-[8px] font-bold"
-                          style={{
-                            background: `hsl(${appHue(app.name)} 70% 52% / 0.85)`,
-                            color: "#08111d",
-                          }}
-                        >
-                          {initials(app.name)}
+                        <span key={app.path} className="grid aspect-square place-items-center">
+                          <AppGlyph app={app} />
                         </span>
                       ))}
                     </div>
@@ -135,28 +170,38 @@ export default function LauncherWindow() {
 
         {(query.trim() || selected) && (
           <div className="grid grid-cols-6 gap-3">
-            {list.map((app) => (
-              <button
-                key={app.path}
-                type="button"
-                onClick={() => launch(app)}
-                title={app.name}
-                className="flex flex-col items-center gap-1.5 rounded-lg p-1.5 hover:bg-white/10"
-              >
-                <span
-                  className="grid size-10 place-items-center rounded-lg text-[10px] font-bold"
-                  style={{
-                    background: `hsl(${appHue(app.name)} 70% 52% / 0.9)`,
-                    color: "#08111d",
-                  }}
-                >
-                  {initials(app.name)}
-                </span>
-                <span className="w-full truncate text-center text-[9px] leading-tight opacity-80">
-                  {app.name}
-                </span>
-              </button>
-            ))}
+            {list.map((app) => {
+              const isPinned = pinned.some((entry) => entry.path === app.path);
+              return (
+                <div key={app.path} className="group relative">
+                  <button
+                    type="button"
+                    onClick={() => launch(app)}
+                    title={app.name}
+                    className="flex w-full flex-col items-center gap-1.5 rounded-lg p-1.5 hover:bg-white/10"
+                  >
+                    <span className="grid size-10 place-items-center">
+                      <AppGlyph app={app} rounded="rounded-lg" />
+                    </span>
+                    <span className="w-full truncate text-center text-[9px] leading-tight opacity-80">
+                      {app.name}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => togglePin(app)}
+                    title={isPinned ? "Remove from dock" : "Pin to dock"}
+                    className={`absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full text-[9px] leading-none ring-1 ring-black/30 transition-opacity ${
+                      isPinned
+                        ? "bg-[var(--glacier-accent)] text-black"
+                        : "bg-white/20 text-white opacity-0 group-hover:opacity-100"
+                    }`}
+                  >
+                    {isPinned ? "✓" : "+"}
+                  </button>
+                </div>
+              );
+            })}
             {list.length === 0 && (
               <div className="col-span-6 py-10 text-center text-xs opacity-50">
                 Nothing matches “{query}”.

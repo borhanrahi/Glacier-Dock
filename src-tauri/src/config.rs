@@ -284,6 +284,34 @@ impl Default for AdvancedSettings {
     }
 }
 
+/// One app the user chose to keep on the dock.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedApp {
+    pub name: String,
+    /// Shortcut path, `.exe`, or a `ms-settings:`-style URI.
+    pub path: String,
+}
+
+/// First-run dock contents. Deliberately tiny and predictable: the dock is
+/// never auto-filled with whatever happens to sit in the Start Menu.
+pub fn default_pinned_apps() -> Vec<PinnedApp> {
+    let explorer = std::env::var("SystemRoot")
+        .map(|root| format!(r"{root}\explorer.exe"))
+        .unwrap_or_else(|_| r"C:\Windows\explorer.exe".into());
+
+    vec![
+        PinnedApp {
+            name: "File Explorer".into(),
+            path: explorer,
+        },
+        PinnedApp {
+            name: "Settings".into(),
+            path: "ms-settings:".into(),
+        },
+    ]
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
@@ -295,6 +323,11 @@ pub struct AppConfig {
     pub automations: AutomationSettings,
     pub telemetry: TelemetrySettings,
     pub advanced: AdvancedSettings,
+    /// Apps pinned to every dock, in order.
+    pub pinned_apps: Vec<PinnedApp>,
+    /// Becomes true once the first-run pins have been written, so clearing the
+    /// dock later stays cleared instead of re-seeding the defaults.
+    pub pins_initialized: bool,
     /// Widget ids pinned to every dock's strip (click → flyout).
     pub dock_widgets: Vec<String>,
     /// Latitude/longitude for the solar auto day/night schedule.
@@ -305,7 +338,9 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            replace_taskbar: true,
+            // Off by default: hiding the user's taskbar is opt-in, never a
+            // surprise after install.
+            replace_taskbar: false,
             appearance: Appearance::default(),
             docks: Vec::new(),
             profiles: default_profiles(),
@@ -313,6 +348,8 @@ impl Default for AppConfig {
             automations: AutomationSettings::default(),
             telemetry: TelemetrySettings::default(),
             advanced: AdvancedSettings::default(),
+            pinned_apps: default_pinned_apps(),
+            pins_initialized: false,
             dock_widgets: vec!["cpu-monitor".into(), "clock-large".into(), "battery-status".into()],
             latitude: 0.0,
             longitude: 0.0,
@@ -341,10 +378,23 @@ pub fn load(app: &AppHandle) -> AppConfig {
     let Some(path) = config_path(app) else {
         return AppConfig::default();
     };
-    match std::fs::read_to_string(&path) {
+    let mut cfg: AppConfig = match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
         Err(_) => AppConfig::default(),
+    };
+
+    // First launch (or an upgrade from a build without pins): write the
+    // defaults once so the dock has something sane to show and so emptying the
+    // dock later is respected.
+    if !cfg.pins_initialized {
+        if cfg.pinned_apps.is_empty() {
+            cfg.pinned_apps = default_pinned_apps();
+        }
+        cfg.pins_initialized = true;
+        save(app, &cfg);
     }
+
+    cfg
 }
 
 pub fn save(app: &AppHandle, cfg: &AppConfig) {

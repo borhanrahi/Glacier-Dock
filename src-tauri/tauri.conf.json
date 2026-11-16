@@ -30,7 +30,7 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "both"
       }
     }
   }

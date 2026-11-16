@@ -50,8 +50,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     # Job-level so the matrix context is available; workflow-level concurrency
     # cannot reference matrix and made every run fail at startup.
+    #
+    # Keyed on the commit SHA (not the ref) so that publishing a release tag for
+    # a commit already on main supersedes that commit's validation run instead
+    # of building all four OS targets a second time. Commits that are never
+    # tagged keep exactly one validation run.
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.artifact }}
+      group: ${{ github.workflow }}-${{ github.sha }}-${{ matrix.artifact }}
       cancel-in-progress: true
     strategy:
       fail-fast: false

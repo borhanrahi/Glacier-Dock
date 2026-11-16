@@ -1,0 +1,38 @@
+# Release notes configuration for GitHub's auto-generated changelogs.
+# The installer release body comes from .github/workflows/build.yml; this file
+# controls the "What's changed" list GitHub appends to generated notes and the
+# category names shown in the release UI.
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+      - duplicate
+      - invalid
+    authors:
+      - dependabot
+      - github-actions
+  categories:
+    - title: Dock shell & liquid glass
+      labels:
+        - shell
+        - liquid-glass
+        - win32
+    - title: Widgets & catalog
+      labels:
+        - widgets
+        - catalog
+    - title: Settings & configuration
+      labels:
+        - settings
+        - config
+    - title: Packaging & CI
+      labels:
+        - ci
+        - packaging
+    - title: Fixes
+      labels:
+        - bug
+        - fix
+    - title: Other changes
+      labels:
+        - "*"

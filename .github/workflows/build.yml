@@ -31,6 +31,15 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a GitHub Release with the installers"
+        type: boolean
+        default: true
+      version:
+        description: "Release version (without the v), e.g. 0.2.0"
+        type: string
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.artifact }}
@@ -70,12 +79,20 @@ jobs:
       - name: Resolve version
         id: version
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_VERSION}" ]]; then
+            VERSION="${INPUT_VERSION#v}"
           else
             VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release version '$VERSION' (expected something like 0.2.0)"
+            exit 1
           fi
           export VERSION
           node - <<'NODE'
@@ -122,16 +139,17 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # On a v* tag this creates the GitHub Release and uploads the installers.
-      # Otherwise tagName resolves to "" and tauri-action just builds.
-      - name: Build and bundle
+      # Release runs: a v* tag push, or a manual dispatch with release=true
+      # (which creates the v<version> tag/release from the dispatched commit).
+      - name: Build and publish release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --bundles ${{ matrix.bundles }}
-          tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
-          releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('Glacier Dock {0}', github.ref_name) || '' }}
+          tagName: v${{ steps.version.outputs.version }}
+          releaseName: Glacier Dock v${{ steps.version.outputs.version }}
           releaseBody: |
             Free and open-source liquid glass dock for Windows.
 
@@ -145,6 +163,13 @@ jobs:
             Linux packages are built on Ubuntu 22.04 (glibc 2.35): fine on Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and other current distros.
           releaseDraft: false
           prerelease: false
+
+      # Validation runs only: no release, no tag, nothing published.
+      - name: Build and bundle
+        if: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
+        uses: tauri-apps/tauri-action@v0
+        with:
+          args: --bundles ${{ matrix.bundles }}
 
       # Test builds only. Release assets above never hit artifact storage, and
       # these expire in 3 days so the free 500 MB cap is never reached.

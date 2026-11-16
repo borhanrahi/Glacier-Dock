@@ -732,6 +732,8 @@ fn open_widget(app: AppHandle, id: String, width: Option<f64>, height: Option<f6
         &format!("&widget={}", url_encode(&id)),
     )
     .ok_or_else(|| "could not open the widget flyout".to_string())?;
+    // Position before showing so a reused flyout never flashes at the old spot.
+    let _ = window.hide();
     let _ = window.set_size(tauri::LogicalSize::new(width, height));
 
     // Anchor just above the bottom edge of the primary display, near the dock.

@@ -7,8 +7,13 @@ name: Build
 #   * Tag pushes (v*)  -> installers attached to a GitHub Release. Release
 #                         assets are free and do NOT count against Actions
 #                         artifact storage.
-#   * main / PR pushes -> build validation only, with 3-day artifacts so old
-#                         builds self-delete long before the 500 MB cap.
+#   * main / PR pushes -> build validation only, with 3-day artifacts, pruned
+#                         to the 2 most recent builds by the cleanup job.
+#
+# Versioning: automatic. A v* tag sets the app version to the tag (v0.2.0 ->
+# 0.2.0); any other run gets 0.1.<run_number>. The version is written into
+# package.json, tauri.conf.json and Cargo.toml during CI only — nothing is
+# committed back.
 #
 # Windows note: GitHub only offers Windows Server images, so the Windows 10/11
 # installers are produced from windows-latest (Windows 11 kernel family). The
@@ -61,6 +66,32 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          fi
+          export VERSION
+          node - <<'NODE'
+          const fs = require("fs");
+          const v = process.env.VERSION;
+          for (const p of ["package.json", "src-tauri/tauri.conf.json"]) {
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            j.version = v;
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+          }
+          const cargo = "src-tauri/Cargo.toml";
+          const toml = fs.readFileSync(cargo, "utf8");
+          fs.writeFileSync(cargo, toml.replace(/^version = ".*"$/m, `version = "${v}"`));
+          console.log(`Glacier Dock version -> ${v}`);
+          NODE
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       # webkit2gtk 4.1 + libayatana appindicator + rpmbuild for the RPM target.
       - name: Install Linux build dependencies
@@ -126,3 +157,57 @@ jobs:
           if-no-files-found: error
           retention-days: 3
           compression-level: 0
+
+  # Storage guard: after every non-release build, delete artifact sets from all
+  # but the 2 most recent builds. Releases are untouchable here — release assets
+  # are not Actions artifacts and cost no storage.
+  cleanup:
+    name: Prune old build artifacts
+    needs: build
+    if: always() && !startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write # required to delete artifacts
+    steps:
+      - name: Keep only the 2 most recent builds
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          gh api --paginate "repos/${REPO}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[]
+                  | select(.name | startswith("glacier-dock-"))
+                  | [.created_at, (.workflow_run.id | tostring), (.id | tostring), .name]
+                  | @tsv' > artifacts.tsv
+
+          if [[ ! -s artifacts.tsv ]]; then
+            echo "No build artifacts found — nothing to prune."
+            exit 0
+          fi
+
+          sort -r artifacts.tsv > sorted.tsv
+          mapfile -t KEEP_RUNS < <(cut -f2 sorted.tsv | awk '!seen[$0]++' | head -n 2)
+          echo "Keeping builds: ${KEEP_RUNS[*]}"
+
+          kept() {
+            local run_id="$1" r
+            for r in "${KEEP_RUNS[@]}"; do
+              [[ "$r" == "$run_id" ]] && return 0
+            done
+            return 1
+          }
+
+          while IFS=$'\t' read -r _created run_id artifact_id name; do
+            if kept "$run_id"; then
+              continue
+            fi
+            echo "Deleting ${name} (artifact ${artifact_id}, build ${run_id})"
+            gh api -X DELETE "repos/${REPO}/actions/artifacts/${artifact_id}" || \
+              echo "  warn: could not delete ${artifact_id}"
+          done < sorted.tsv
+
+          echo "Prune complete."

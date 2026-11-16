@@ -16,12 +16,16 @@ import "./styles/glacier-tokens.css";
 const DockWindow = lazy(() => import("./windows/DockWindow"));
 const SpotlightWindow = lazy(() => import("./windows/SpotlightWindow"));
 const LauncherWindow = lazy(() => import("./windows/LauncherWindow"));
+const TaskManagerWindow = lazy(() => import("./windows/TaskManagerWindow"));
+const PreviewWindow = lazy(() => import("./windows/PreviewWindow"));
 
 /** Docks are created per display as `dock-0`, `dock-1`, … */
 function resolveWindow(label: string): LazyExoticComponent<ComponentType> | null {
   if (label.startsWith("dock")) return DockWindow;
   if (label === "spotlight") return SpotlightWindow;
   if (label === "launcher") return LauncherWindow;
+  if (label === "task-manager") return TaskManagerWindow;
+  if (label === "preview") return PreviewWindow;
   return null;
 }
 

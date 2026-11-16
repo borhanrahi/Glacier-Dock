@@ -73,7 +73,9 @@ export default function DockWindow() {
   const [island, setIsland] = useState<IslandNotification | null>(null);
   const [running, setRunning] = useState<string[]>([]);
   const [draggingDock, setDraggingDock] = useState(false);
+  const [profile, setProfile] = useState<string | null>(null);
   const [clock, setClock] = useState(() => new Date());
+  const hoverTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 1000);
@@ -131,6 +133,30 @@ export default function DockWindow() {
       .catch(() => {});
     return () => unlisten?.();
   }, []);
+
+  // Context profile auto-switching (Work / Coding / Gaming).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ name: string }>("glacier://profile", (event) => setProfile(event.payload.name))
+      .then((fn) => (unlisten = fn))
+      .catch(() => {});
+    return () => unlisten?.();
+  }, []);
+
+  // DWM live window preview after a short hover.
+  const startPreview = (app: InstalledApp) => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => {
+      invoke("show_preview_for_image", { image: `${app.name}.exe` }).catch(() => {});
+    }, 450);
+  };
+
+  const endPreview = () => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => {
+      invoke("hide_app_preview").catch(() => {});
+    }, 320);
+  };
 
   // OS drag-and-drop -> Drop Shelf.
   useEffect(() => {
@@ -359,6 +385,8 @@ export default function DockWindow() {
                 createFolder(app);
               }}
               onClick={() => launch(app)}
+              onPointerEnter={() => startPreview(app)}
+              onPointerLeave={endPreview}
               title={app.name}
               className="relative grid shrink-0 place-items-center rounded-[10px] transition-transform duration-150 active:scale-90"
               style={{
@@ -436,6 +464,24 @@ export default function DockWindow() {
             data-icon
             data-no-drag
             type="button"
+            title="Glacier Activity Monitor"
+            onClick={() => invoke("task_manager").catch(() => {})}
+            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            style={{
+              width: "var(--glacier-icon-base)",
+              height: "var(--glacier-icon-base)",
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
+            }}
+          >
+            ▤
+          </button>
+
+          <button
+            data-icon
+            data-no-drag
+            type="button"
             title="Spotlight (Alt + Space)"
             onClick={() => invoke("open_spotlight").catch(() => {})}
             className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
@@ -452,11 +498,13 @@ export default function DockWindow() {
         </div>
 
         {!vertical && (
-          <div
-            data-no-drag
-            className="relative ml-1 select-none text-xs font-semibold tabular-nums opacity-90"
-          >
-            {time}
+          <div data-no-drag className="relative ml-1 flex select-none flex-col leading-tight">
+            <span className="text-xs font-semibold tabular-nums opacity-90">{time}</span>
+            {profile && (
+              <span className="text-[8px] uppercase tracking-widest opacity-45">
+                {profile}
+              </span>
+            )}
           </div>
         )}
       </div>

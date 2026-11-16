@@ -259,6 +259,223 @@ fn hide_window(window: WebviewWindow) {
     let _ = window.hide();
 }
 
+pub fn open_task_manager(app: &AppHandle) -> Option<WebviewWindow> {
+    ensure_window(app, "task-manager", "Glacier Activity Monitor", 900.0, 600.0)
+}
+
+#[tauri::command]
+fn task_manager(app: AppHandle) {
+    let _ = open_task_manager(&app);
+}
+
+#[tauri::command]
+fn process_snapshot() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::process_manager::snapshot()).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!({ "processes": [], "totalRam": 0, "usedRam": 0 })
+    }
+}
+
+#[tauri::command]
+fn kill_process(pid: u32, tree: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return win32::process_manager::kill(pid, tree);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (pid, tree);
+        Err("only supported on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn suspend_process(pid: u32, suspend: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return win32::process_manager::set_suspended(pid, suspend);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (pid, suspend);
+        Err("only supported on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn reveal_process(pid: u32) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return win32::process_manager::reveal(pid);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        Err("only supported on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn listening_ports() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::process_manager::listening_ports()).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!([])
+    }
+}
+
+#[tauri::command]
+fn startup_entries() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::process_manager::startup_entries()).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!([])
+    }
+}
+
+#[tauri::command]
+fn jump_destinations(limit: Option<usize>) -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::jumplist::recent_destinations(
+            limit.unwrap_or(8),
+        ))
+        .unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = limit;
+        serde_json::json!([])
+    }
+}
+
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return win32::apps::launch(&path);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("only supported on Windows".into())
+    }
+}
+
+#[tauri::command]
+fn set_profile(app: AppHandle, name: String) {
+    let mut cfg = config::load(&app);
+    cfg.active_profile = name.clone();
+    config::save(&app, &cfg);
+    if let Some(profile) = cfg.profiles.iter().find(|profile| profile.name == name) {
+        use tauri::Emitter;
+        let _ = app.emit("glacier://profile", profile);
+    }
+}
+
+/// Calendar widget hook: an event is <= 2 minutes away.
+#[tauri::command]
+fn automation_meeting(app: AppHandle, title: String) {
+    #[cfg(windows)]
+    win32::automations::on_meeting_started(&app, &title);
+    let _ = &app;
+}
+
+/// AI quota widget hook: a provider crossed 85% / 95% of its window.
+#[tauri::command]
+fn automation_quota(app: AppHandle, vendor: String, percent: f32, resets_at: String) {
+    #[cfg(windows)]
+    win32::automations::on_ai_quota(&app, &vendor, percent, &resets_at);
+    let _ = &app;
+}
+
+#[tauri::command]
+fn preview_windows(pid: u32) -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::dwm_preview::windows_for_pid(pid)).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = pid;
+        serde_json::json!([])
+    }
+}
+
+/// Show a live DWM thumbnail of the first visible window owned by `pid`.
+#[tauri::command]
+fn show_app_preview(app: AppHandle, pid: u32) {
+    #[cfg(windows)]
+    {
+        let Some(window) = ensure_window(&app, "preview", "Preview", 280.0, 180.0) else {
+            return;
+        };
+        let Ok(preview_hwnd) = window.hwnd() else {
+            return;
+        };
+        let windows = win32::dwm_preview::windows_for_pid(pid);
+        let Some(target) = windows.first() else {
+            let _ = window.hide();
+            return;
+        };
+        if let Err(err) =
+            win32::dwm_preview::attach(preview_hwnd.0 as isize, target.hwnd, 280, 180)
+        {
+            eprintln!("glacier: preview failed: {err}");
+            let _ = window.hide();
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, pid);
+    }
+}
+
+/// Hover preview: find the process by image name and thumbnail its window.
+#[tauri::command]
+fn show_preview_for_image(app: AppHandle, image: String) {
+    #[cfg(windows)]
+    {
+        let snapshot = win32::process_manager::snapshot();
+        if let Some(row) = snapshot
+            .processes
+            .iter()
+            .find(|row| row.name.eq_ignore_ascii_case(&image))
+        {
+            let pid = row.pid;
+            show_app_preview(app, pid);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, image);
+    }
+}
+
+#[tauri::command]
+fn hide_app_preview(app: AppHandle) {
+    let Some(window) = app.get_webview_window("preview") else {
+        return;
+    };
+    #[cfg(windows)]
+    {
+        if let Ok(hwnd) = window.hwnd() {
+            win32::dwm_preview::detach(hwnd.0 as isize);
+        }
+    }
+    let _ = window.hide();
+}
+
 /// Create (or re-show) a utility window: spotlight, launcher, flyout.
 fn ensure_window(
     app: &AppHandle,
@@ -360,7 +577,23 @@ pub fn run() {
             snap_dock_edge,
             open_spotlight,
             open_launcher,
-            hide_window
+            hide_window,
+            task_manager,
+            process_snapshot,
+            kill_process,
+            suspend_process,
+            reveal_process,
+            listening_ports,
+            startup_entries,
+            jump_destinations,
+            open_path,
+            set_profile,
+            preview_windows,
+            show_app_preview,
+            show_preview_for_image,
+            hide_app_preview,
+            automation_meeting,
+            automation_quota
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -378,6 +611,9 @@ pub fn run() {
                 win32::monitors::sync_docks(&handle);
                 win32::liquid_glass::start(handle.clone());
                 win32::hotkey::spawn(handle.clone());
+                win32::profiles::spawn(handle.clone());
+                win32::automations::spawn(handle.clone());
+                win32::systray::install(&handle);
             }
 
             // Non-Windows builds (CI, future ports) still need a window. On

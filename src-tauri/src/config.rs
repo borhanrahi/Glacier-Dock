@@ -135,10 +135,118 @@ impl Default for DockInstance {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
+pub struct ContextProfile {
+    pub name: String,
+    /// Executable names (case-insensitive) that activate this profile.
+    pub triggers: Vec<String>,
+    pub widgets: Vec<String>,
+    pub color: String,
+}
+
+impl Default for ContextProfile {
+    fn default() -> Self {
+        Self {
+            name: "Default".into(),
+            triggers: Vec::new(),
+            widgets: vec!["apps-dock-zone".into(), "clock-large".into()],
+            color: "#38BDF8".into(),
+        }
+    }
+}
+
+pub fn default_profiles() -> Vec<ContextProfile> {
+    vec![
+        ContextProfile::default(),
+        ContextProfile {
+            name: "Work".into(),
+            triggers: vec![
+                "winword.exe".into(),
+                "excel.exe".into(),
+                "powerpnt.exe".into(),
+                "teams.exe".into(),
+                "outlook.exe".into(),
+                "notion.exe".into(),
+            ],
+            widgets: vec![
+                "apps-dock-zone".into(),
+                "unified-calendar".into(),
+                "todo-ring".into(),
+                "clock-large".into(),
+            ],
+            color: "#34D399".into(),
+        },
+        ContextProfile {
+            name: "Coding".into(),
+            triggers: vec![
+                "code.exe".into(),
+                "devenv.exe".into(),
+                "windowsterminal.exe".into(),
+                "idea64.exe".into(),
+                "pycharm64.exe".into(),
+                "cursor.exe".into(),
+            ],
+            widgets: vec![
+                "apps-dock-zone".into(),
+                "github-activity".into(),
+                "port-killer".into(),
+                "ai-limits-dual".into(),
+                "clock-large".into(),
+            ],
+            color: "#A78BFA".into(),
+        },
+        ContextProfile {
+            name: "Gaming".into(),
+            triggers: vec![
+                "valorant.exe".into(),
+                "cyberpunk2077.exe".into(),
+                "cs2.exe".into(),
+                "obs64.exe".into(),
+                "steam.exe".into(),
+            ],
+            widgets: vec![
+                "apps-dock-zone".into(),
+                "gpu-monitor".into(),
+                "temperature-gauge".into(),
+                "mic-mute-combo".into(),
+            ],
+            color: "#FB923C".into(),
+        },
+    ]
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AutomationSettings {
+    pub pre_meeting_pause: bool,
+    pub auto_dnd: bool,
+    pub ai_quota_alerts: bool,
+    pub renewal_reminders: bool,
+    pub intelli_hide: bool,
+    pub low_battery_power_shift: bool,
+}
+
+impl Default for AutomationSettings {
+    fn default() -> Self {
+        Self {
+            pre_meeting_pause: true,
+            auto_dnd: true,
+            ai_quota_alerts: true,
+            renewal_reminders: true,
+            intelli_hide: true,
+            low_battery_power_shift: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
     pub replace_taskbar: bool,
     pub appearance: Appearance,
     pub docks: Vec<DockInstance>,
+    pub profiles: Vec<ContextProfile>,
+    pub active_profile: String,
+    pub automations: AutomationSettings,
     /// Latitude/longitude for the solar auto day/night schedule.
     pub latitude: f64,
     pub longitude: f64,
@@ -150,6 +258,9 @@ impl Default for AppConfig {
             replace_taskbar: true,
             appearance: Appearance::default(),
             docks: Vec::new(),
+            profiles: default_profiles(),
+            active_profile: "Default".into(),
+            automations: AutomationSettings::default(),
             latitude: 0.0,
             longitude: 0.0,
         }

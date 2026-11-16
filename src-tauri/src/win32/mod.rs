@@ -5,9 +5,21 @@
 #[cfg(windows)]
 pub mod apps;
 #[cfg(windows)]
+pub mod automations;
+#[cfg(windows)]
+pub mod dwm_preview;
+#[cfg(windows)]
 pub mod hit_test;
 #[cfg(windows)]
 pub mod hotkey;
+#[cfg(windows)]
+pub mod jumplist;
+#[cfg(windows)]
+pub mod process_manager;
+#[cfg(windows)]
+pub mod profiles;
+#[cfg(windows)]
+pub mod systray;
 #[cfg(windows)]
 pub mod liquid_glass;
 #[cfg(windows)]

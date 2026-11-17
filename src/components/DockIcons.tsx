@@ -166,3 +166,18 @@ export function TrashBinIcon() {
     </svg>
   );
 }
+
+export function ChevronTrayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-[18px] opacity-85" aria-hidden>
+      <path
+        d="M6.5 14.5 12 9l5.5 5.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

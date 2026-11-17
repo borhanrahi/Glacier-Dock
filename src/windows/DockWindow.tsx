@@ -7,6 +7,7 @@ import { AppFolderTile } from "../components/AppFolderTile";
 import { DockContextMenu, DockSurfaceMenu } from "../components/DockContextMenu";
 import {
   ActivityMonitorIcon,
+  ChevronTrayIcon,
   DownloadsIcon,
   SettingsGearIcon,
   SpotlightSearchIcon,
@@ -860,6 +861,21 @@ export default function DockWindow() {
                 </>
               )}
               {showAiUsage && <AiUsageIsland vertical={vertical} />}
+              <button
+                type="button"
+                aria-label="Hidden & Background Apps"
+                onClick={() =>
+                  invoke("open_widget", {
+                    id: "background-apps",
+                    width: 340,
+                    height: 380,
+                  }).catch(() => {})
+                }
+                className="group glacier-widget-pill glacier-icon-glow relative grid size-8 shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+              >
+                <span className="glacier-dock-tip">Hidden Apps</span>
+                <ChevronTrayIcon />
+              </button>
               <div className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5">
                 <div className="flex flex-col leading-none">
                   <span className="text-[9px] font-semibold tracking-wider opacity-55">

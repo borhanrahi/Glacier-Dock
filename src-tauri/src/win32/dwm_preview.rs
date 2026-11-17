@@ -11,12 +11,14 @@ use serde::Serialize;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Dwm::{
-    DwmRegisterThumbnail, DwmUnregisterThumbnail, DwmUpdateThumbnailProperties,
-    DWM_THUMBNAIL_PROPERTIES, DWM_TNP_RECTDESTINATION, DWM_TNP_SOURCECLIENTAREAONLY,
-    DWM_TNP_VISIBLE,
+    DwmGetWindowAttribute, DwmRegisterThumbnail, DwmUnregisterThumbnail,
+    DwmUpdateThumbnailProperties, DWMWA_CLOAKED, DWM_THUMBNAIL_PROPERTIES,
+    DWM_TNP_RECTDESTINATION, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
+    EnumWindows, GetWindow, GetWindowLongW, GetWindowTextW, GetWindowThreadProcessId,
+    IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GW_OWNER,
+    SW_RESTORE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -82,9 +84,41 @@ pub fn windows_for_pid(pid: u32) -> Vec<WindowEntry> {
         .collect()
 }
 
+pub fn focus_pid(pid: u32) -> bool {
+    let entries = windows_for_pid(pid);
+    let Some(first) = entries.first() else {
+        return false;
+    };
+    let hwnd = HWND(first.hwnd as *mut _);
+    unsafe {
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        SetForegroundWindow(hwnd).as_bool()
+    }
+}
+
 unsafe extern "system" fn enum_window(hwnd: HWND, data: LPARAM) -> BOOL {
     let out = &mut *(data.0 as *mut Vec<WindowEntry>);
     if !IsWindowVisible(hwnd).as_bool() {
+        return TRUE;
+    }
+    let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+    if (ex_style & WS_EX_TOOLWINDOW.0) != 0 {
+        return TRUE;
+    }
+    let has_owner = GetWindow(hwnd, GW_OWNER).is_ok_and(|o| !o.0.is_null());
+    if has_owner && (ex_style & WS_EX_APPWINDOW.0) == 0 {
+        return TRUE;
+    }
+    let mut cloaked: u32 = 0;
+    let _ = DwmGetWindowAttribute(
+        hwnd,
+        DWMWA_CLOAKED,
+        &mut cloaked as *mut u32 as *mut _,
+        std::mem::size_of::<u32>() as u32,
+    );
+    if cloaked != 0 {
         return TRUE;
     }
     let mut title = [0u16; 256];

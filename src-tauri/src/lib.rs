@@ -358,6 +358,18 @@ fn installed_apps(limit: Option<usize>) -> Vec<serde_json::Value> {
 fn launch_app(path: String) -> Result<(), String> {
     #[cfg(windows)]
     {
+        let target = path.to_ascii_lowercase();
+        if target.ends_with(".exe") {
+            let snap = win32::process_manager::snapshot();
+            for proc in snap.processes {
+                if let Some(exe) = proc.exe_path {
+                    if exe.to_ascii_lowercase() == target && win32::dwm_preview::focus_pid(proc.pid)
+                    {
+                        return Ok(());
+                    }
+                }
+            }
+        }
         return win32::apps::launch(&path);
     }
     #[cfg(not(windows))]

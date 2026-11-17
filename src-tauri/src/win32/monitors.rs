@@ -15,8 +15,9 @@ use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM}
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
-    SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_DISPLAYCHANGE, WM_SETTINGCHANGE, WNDCLASSW, WS_POPUP,
+    SetWindowDisplayAffinity, SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, HWND_MESSAGE,
+    MSG, WDA_EXCLUDEFROMCAPTURE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_DISPLAYCHANGE,
+    WM_SETTINGCHANGE, WNDCLASSW, WS_POPUP,
 };
 
 use crate::config::{self, DockSize, Edge};
@@ -159,6 +160,12 @@ pub fn sync_docks(app: &AppHandle) {
                         let _ = window.set_size(PhysicalSize::new(width as u32, height as u32));
                         if let Ok(hwnd) = window.hwnd() {
                             crate::win32::hit_test::install(hwnd.0 as isize);
+                            unsafe {
+                                let _ = SetWindowDisplayAffinity(
+                                    HWND(hwnd.0),
+                                    WDA_EXCLUDEFROMCAPTURE,
+                                );
+                            }
                         }
                     }
                     Err(err) => eprintln!("glacier: failed to create {label}: {err}"),

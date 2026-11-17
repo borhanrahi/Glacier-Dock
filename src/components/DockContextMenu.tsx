@@ -159,3 +159,80 @@ export function DockContextMenu({
     </div>
   );
 }
+
+/**
+ * Right-click menu for the dock surface itself (OpenTaskbar-style):
+ * quick access to Launcher, Spotlight, Activity Monitor, Dropzone, Settings,
+ * and native Windows taskbar recovery.
+ */
+export function DockSurfaceMenu({
+  anchorX,
+  hasShelf,
+  onToggleShelf,
+  onClose,
+}: {
+  anchorX: number;
+  hasShelf: boolean;
+  onToggleShelf: () => void;
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
+  const left = Math.max(12, Math.min(anchorX - 105, window.innerWidth - 232));
+
+  const item = (label: string, shortcut: string | null, action: () => void) => (
+    <button
+      key={label}
+      type="button"
+      role="menuitem"
+      onClick={() => {
+        action();
+        onClose();
+      }}
+      className="flex w-full items-center justify-between rounded-[9px] px-2.5 py-1.5 text-left transition-colors hover:bg-white/[0.11]"
+    >
+      <span>{label}</span>
+      {shortcut && <span className="text-[10px] opacity-45">{shortcut}</span>}
+    </button>
+  );
+
+  return (
+    <div
+      ref={menuRef}
+      data-no-drag
+      role="menu"
+      className="glacier-dock-glass fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px]"
+      style={{ left }}
+    >
+      <span className="glacier-dock-sheen" aria-hidden />
+      <div className="px-2.5 py-1 text-[11px] font-semibold opacity-65">Glacier Dock</div>
+      <div className="my-1 h-px bg-white/[0.10]" />
+      {item("App Library", null, () => invoke("open_launcher").catch(() => {}))}
+      {item("Spotlight", "Alt+Space", () => invoke("open_spotlight").catch(() => {}))}
+      {item("Activity Monitor", null, () => invoke("task_manager").catch(() => {}))}
+      {hasShelf && item("Toggle Dropzone Shelf", null, onToggleShelf)}
+      <div className="my-1 h-px bg-white/[0.10]" />
+      {item("Glacier Settings", null, () => invoke("open_settings").catch(() => {}))}
+      {item("Restore Windows Taskbar", null, () =>
+        invoke("restore_native_taskbar").catch(() => {}),
+      )}
+    </div>
+  );
+}

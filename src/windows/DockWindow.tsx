@@ -4,12 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 
 import { AiUsageIsland } from "../components/AiUsageIsland";
 import { AppFolderTile } from "../components/AppFolderTile";
-import { DockContextMenu } from "../components/DockContextMenu";
+import { DockContextMenu, DockSurfaceMenu } from "../components/DockContextMenu";
 import {
   ActivityMonitorIcon,
+  DownloadsIcon,
   SettingsGearIcon,
   SpotlightSearchIcon,
   StartGridIcon,
+  TrashBinIcon,
 } from "../components/DockIcons";
 import { DockRingMeter } from "../components/DockRingMeter";
 import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
@@ -120,6 +122,7 @@ export default function DockWindow() {
   const [clock, setClock] = useState(() => new Date());
   const [bouncingApp, setBouncingApp] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ app: InstalledApp; x: number } | null>(null);
+  const [surfaceMenuX, setSurfaceMenuX] = useState<number | null>(null);
   const telemetry = useTelemetry();
   const hoverTimer = useRef<number | undefined>(undefined);
   const bounceTimer = useRef<number | undefined>(undefined);
@@ -421,6 +424,25 @@ export default function DockWindow() {
     ? "my-1 h-px w-6 shrink-0 bg-white/[0.12]"
     : "mx-1 h-6 w-px shrink-0 self-center bg-white/[0.12]";
 
+  const inlineWidgetLabel = (id: string, fallback: string): string => {
+    switch (id) {
+      case "cpu-monitor":
+        return `${telemetry.cpuPercent.toFixed(0)}%`;
+      case "memory-gauge":
+        return `${telemetry.ramPercent.toFixed(0)}%`;
+      case "disk-space":
+        return `${Math.round(telemetry.diskFreeGb)} GB`;
+      case "network-throughput":
+        return `↓${Math.round(telemetry.netDownBps / 1024)}K`;
+      case "top-process":
+        return telemetry.topProcess ? telemetry.topProcess.name : fallback;
+      case "battery-status":
+        return telemetry.batteryPercent !== null ? `${Math.round(telemetry.batteryPercent)}%` : fallback;
+      default:
+        return fallback;
+    }
+  };
+
   return (
     <div className={`flex h-full w-full ${EDGE_ALIGN[edge]}`}>
       <GlacierIsland
@@ -442,6 +464,13 @@ export default function DockWindow() {
       <div
         ref={pillRef}
         onPointerDown={onPillPointerDown}
+        onContextMenu={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.closest("[data-icon]")) return;
+          event.preventDefault();
+          setContextMenu(null);
+          setSurfaceMenuX(event.clientX);
+        }}
         className={`glacier-dock-glass relative flex items-center gap-1.5 overflow-visible px-2.5 ${
           draggingDock ? "ring-2 ring-[var(--glacier-accent)]" : ""
         }`}
@@ -465,7 +494,15 @@ export default function DockWindow() {
 
         <div
           ref={rowRef}
-          className={`relative flex items-end gap-1.5 ${vertical ? "flex-col" : "flex-row"}`}
+          onWheel={(event) => {
+            if (vertical || !rowRef.current) return;
+            if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+              rowRef.current.scrollLeft += event.deltaY;
+            }
+          }}
+          className={`glacier-no-scrollbar relative flex items-end gap-1.5 ${
+            vertical ? "flex-col" : "max-w-[calc(100vw-320px)] flex-row overflow-x-auto overflow-y-visible"
+          }`}
           style={{ paddingBlock: vertical ? 6 : 0, paddingInline: vertical ? 0 : 2 }}
         >
           {pinned.map((app) => {
@@ -588,13 +625,51 @@ export default function DockWindow() {
                   {CATEGORY_META[meta.category].glyph}
                 </span>
                 {!vertical && (
-                  <span className="max-w-[74px] truncate text-[11px] font-medium opacity-85">
-                    {meta.name}
+                  <span className="max-w-[74px] truncate text-[11px] font-medium tabular-nums opacity-85">
+                    {inlineWidgetLabel(id, meta.name)}
                   </span>
                 )}
               </button>
             );
           })}
+
+          <button
+            data-icon
+            data-no-drag
+            type="button"
+            aria-label="Downloads"
+            onClick={() => invoke("open_path", { path: "shell:Downloads" }).catch(() => {})}
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+            style={{
+              width: "calc(var(--glacier-icon-base) * 0.92)",
+              height: "calc(var(--glacier-icon-base) * 0.92)",
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
+            }}
+          >
+            {!vertical && <span className="glacier-dock-tip">Downloads</span>}
+            <DownloadsIcon />
+          </button>
+
+          <button
+            data-icon
+            data-no-drag
+            type="button"
+            aria-label="Recycle Bin"
+            onClick={() => invoke("open_path", { path: "shell:RecycleBinFolder" }).catch(() => {})}
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+            style={{
+              width: "calc(var(--glacier-icon-base) * 0.92)",
+              height: "calc(var(--glacier-icon-base) * 0.92)",
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
+            }}
+          >
+            {!vertical && <span className="glacier-dock-tip">Recycle Bin</span>}
+            <TrashBinIcon />
+          </button>
 
           <button
             data-icon
@@ -735,6 +810,15 @@ export default function DockWindow() {
           onClose={() => setContextMenu(null)}
           onLaunch={launch}
           onTogglePin={togglePinApp}
+        />
+      )}
+
+      {surfaceMenuX !== null && (
+        <DockSurfaceMenu
+          anchorX={surfaceMenuX}
+          hasShelf={shelf.length > 0}
+          onToggleShelf={() => setShelfOpen((v) => !v)}
+          onClose={() => setSurfaceMenuX(null)}
         />
       )}
     </div>

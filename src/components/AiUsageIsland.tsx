@@ -17,6 +17,7 @@ export interface AiProviderUsage {
 const PROVIDER_COLOR: Record<string, string> = {
   claude: "#F59E0B",
   codex: "#38BDF8",
+  opencode: "#A78BFA",
   gemini: "#2DD4BF",
   antigravity: "#818CF8",
 };
@@ -24,6 +25,7 @@ const PROVIDER_COLOR: Record<string, string> = {
 const PROVIDER_SHORT: Record<string, string> = {
   claude: "CL",
   codex: "CX",
+  opencode: "OC",
   gemini: "GM",
   antigravity: "AG",
 };

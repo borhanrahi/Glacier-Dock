@@ -551,6 +551,83 @@ fn fetch_antigravity() -> Option<AiProviderUsage> {
     None
 }
 
+fn fetch_opencode() -> AiProviderUsage {
+    let base = |state: &str| AiProviderUsage {
+        id: "opencode".into(),
+        name: "OpenCode Go".into(),
+        state: state.into(),
+        windows: Vec::new(),
+    };
+
+    let token = env::var("OPENCODE_API_KEY").ok().or_else(|| {
+        let path = home_dir()?.join(".local/share/opencode/auth.json");
+        let bytes = fs::read(path).ok()?;
+        let auth: Value = serde_json::from_slice(&bytes).ok()?;
+        auth.pointer("/opencode/key")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+    let Some(token) = token.filter(|t| !t.is_empty()) else {
+        return base("sign_in");
+    };
+
+    let auth = format!("Bearer {token}");
+    let Ok((status, text)) = http_request(
+        "GET",
+        "https://opencode.ai/zen/go/v1/usage",
+        &[("Authorization", &auth), ("Accept", "application/json")],
+        None,
+    ) else {
+        return base("unavailable");
+    };
+    if status == 401 || status == 403 {
+        return base("sign_in");
+    }
+    if status != 200 {
+        return base("unavailable");
+    }
+    let Ok(val) = serde_json::from_str::<Value>(&text) else {
+        return base("unavailable");
+    };
+    let Some(usage) = val.get("usage") else {
+        return base("unavailable");
+    };
+
+    let mut windows = Vec::new();
+    for (key, label) in [("rolling", "5 h"), ("weekly", "7 d"), ("monthly", "30 d")] {
+        if let Some(lane) = usage.get(key) {
+            let pct = lane.get("percent").and_then(Value::as_f64).or_else(|| {
+                let used = lane.get("used")?.as_f64()?;
+                let limit = lane.get("limit")?.as_f64()?;
+                (limit > 0.0).then(|| (used * 100.0) / limit)
+            });
+            if let Some(p) = pct {
+                windows.push(AiQuotaWindow {
+                    label: label.into(),
+                    used_percent: clamp_pct(p),
+                    resets_at: None,
+                });
+            }
+        }
+    }
+
+    AiProviderUsage {
+        id: "opencode".into(),
+        name: "OpenCode Go".into(),
+        state: if windows.is_empty() {
+            "unavailable".into()
+        } else {
+            "ready".into()
+        },
+        windows,
+    }
+}
+
 pub fn snapshot() -> Vec<AiProviderUsage> {
-    vec![fetch_claude(), fetch_codex(), fetch_gemini()]
+    vec![
+        fetch_claude(),
+        fetch_codex(),
+        fetch_opencode(),
+        fetch_gemini(),
+    ]
 }

@@ -145,10 +145,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # Release runs: a v* tag push, or a manual dispatch with release=true
-      # (which creates the v<version> tag/release from the dispatched commit).
+      # Release runs: a v* tag push, a push to main (published as v0.1.<run_number>
+      # prerelease), or a manual dispatch with release=true.
       - name: Build and publish release
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -171,13 +171,13 @@ jobs:
             Every asset is listed in a `SHA256SUMS-<platform>.txt` file in the same release so a download can be verified:
             `sha256sum -c SHA256SUMS-windows-x64.txt`.
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
 
       # Signing with a purchased certificate is not available here, so publish
       # per-platform SHA-256 checksums instead: they detect a corrupted or
       # tampered download without any secret.
       - name: Publish checksums
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -206,9 +206,9 @@ jobs:
           cat "$out"
           gh release upload "$TAG" "$out" --clobber
 
-      # Validation runs only: no release, no tag, nothing published.
+      # Validation runs only (PRs or dispatch with release=false): no release, no tag.
       - name: Build and bundle
-        if: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
+        if: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
         uses: tauri-apps/tauri-action@v0
         with:
           args: --bundles ${{ matrix.bundles }}
@@ -216,7 +216,7 @@ jobs:
       # Test builds only. Release assets above never hit artifact storage, and
       # these expire in 3 days so the free 500 MB cap is never reached.
       - name: Upload test bundles
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
         uses: actions/upload-artifact@v4
         with:
           name: glacier-dock-${{ matrix.artifact }}
@@ -225,16 +225,15 @@ jobs:
           retention-days: 3
           compression-level: 0
 
-  # Storage guard: after every non-release build, delete artifact sets from all
-  # but the 2 most recent builds. Releases are untouchable here — release assets
-  # are not Actions artifacts and cost no storage.
+  # Storage guard: prune old build artifacts and old prerelease builds, keeping
+  # only the 2 most recent of each. Full releases (non-prerelease) are untouched.
   cleanup:
-    name: Prune old build artifacts
+    name: Prune old builds & artifacts
     needs: build
-    if: always() && !startsWith(github.ref, 'refs/tags/v')
+    if: always()
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # required to delete old prereleases and their tags
       actions: write # required to delete artifacts
     steps:
       - name: Keep only the 2 most recent builds
@@ -251,30 +250,47 @@ jobs:
                   | [.created_at, (.workflow_run.id | tostring), (.id | tostring), .name]
                   | @tsv' > artifacts.tsv
 
-          if [[ ! -s artifacts.tsv ]]; then
+          if [[ -s artifacts.tsv ]]; then
+            sort -r artifacts.tsv > sorted.tsv
+            mapfile -t KEEP_RUNS < <(cut -f2 sorted.tsv | awk '!seen[$0]++' | head -n 2)
+            echo "Keeping artifact runs: ${KEEP_RUNS[*]}"
+
+            kept() {
+              local run_id="$1" r
+              for r in "${KEEP_RUNS[@]}"; do
+                [[ "$r" == "$run_id" ]] && return 0
+              done
+              return 1
+            }
+
+            while IFS=$'\t' read -r _created run_id artifact_id name; do
+              if kept "$run_id"; then
+                continue
+              fi
+              echo "Deleting ${name} (artifact ${artifact_id}, build ${run_id})"
+              gh api -X DELETE "repos/${REPO}/actions/artifacts/${artifact_id}" || \
+                echo "  warn: could not delete ${artifact_id}"
+            done < sorted.tsv
+          else
             echo "No build artifacts found — nothing to prune."
-            exit 0
           fi
 
-          sort -r artifacts.tsv > sorted.tsv
-          mapfile -t KEEP_RUNS < <(cut -f2 sorted.tsv | awk '!seen[$0]++' | head -n 2)
-          echo "Keeping builds: ${KEEP_RUNS[*]}"
+          # Also prune old prerelease builds (keep the 2 most recent), leaving
+          # full releases untouched.
+          gh api --paginate "repos/${REPO}/releases?per_page=100" \
+            --jq '.[] | select(.prerelease == true) | [.created_at, (.id | tostring), .tag_name] | @tsv' \
+            > prereleases.tsv
 
-          kept() {
-            local run_id="$1" r
-            for r in "${KEEP_RUNS[@]}"; do
-              [[ "$r" == "$run_id" ]] && return 0
+          if [[ -s prereleases.tsv ]]; then
+            sort -r prereleases.tsv | tail -n +3 | while IFS=$'\t' read -r _created rel_id tag_name; do
+              echo "Deleting old prerelease ${tag_name} (release ${rel_id})"
+              gh api -X DELETE "repos/${REPO}/releases/${rel_id}" || \
+                echo "  warn: could not delete release ${rel_id}"
+              gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag_name}" || \
+                echo "  warn: could not delete tag ${tag_name}"
             done
-            return 1
-          }
-
-          while IFS=$'\t' read -r _created run_id artifact_id name; do
-            if kept "$run_id"; then
-              continue
-            fi
-            echo "Deleting ${name} (artifact ${artifact_id}, build ${run_id})"
-            gh api -X DELETE "repos/${REPO}/actions/artifacts/${artifact_id}" || \
-              echo "  warn: could not delete ${artifact_id}"
-          done < sorted.tsv
+          else
+            echo "No prereleases to prune."
+          fi
 
           echo "Prune complete."

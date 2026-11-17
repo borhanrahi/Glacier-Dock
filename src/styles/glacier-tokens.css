@@ -324,6 +324,15 @@ html[data-glacier-preset="white"] .glacier-widget-pill:hover {
   animation: glacier-launch-bounce 420ms var(--glacier-spring);
 }
 
+/* Hidden scrollbar for horizontal dock overflow scrolling */
+.glacier-no-scrollbar {
+  scrollbar-width: none;
+}
+
+.glacier-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Semantic status glow used by widget alert thresholds (AI quota, CPU > 90%) */
 .glacier-status-glow-warn {
   box-shadow:

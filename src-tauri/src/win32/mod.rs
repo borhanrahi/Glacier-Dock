@@ -3,6 +3,8 @@
 //! builds), where the same functions become no-ops.
 
 #[cfg(windows)]
+pub mod ai_usage;
+#[cfg(windows)]
 pub mod apps;
 #[cfg(windows)]
 pub mod autostart;

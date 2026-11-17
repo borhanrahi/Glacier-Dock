@@ -533,6 +533,21 @@ fn hide_app_preview(app: AppHandle) {
 
 /// Latest telemetry bus frame (sampled on demand when the bus is idle).
 #[tauri::command]
+fn ai_usage_snapshot() -> Vec<serde_json::Value> {
+    #[cfg(windows)]
+    {
+        win32::ai_usage::snapshot()
+            .into_iter()
+            .map(|item| serde_json::to_value(item).unwrap_or_default())
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+#[tauri::command]
 fn telemetry_snapshot(app: AppHandle) -> serde_json::Value {
     let cfg = config::load(&app);
     #[cfg(windows)]
@@ -963,6 +978,7 @@ pub fn run() {
             hide_app_preview,
             automation_meeting,
             automation_quota,
+            ai_usage_snapshot,
             telemetry_snapshot,
             network_interfaces,
             ping_host,

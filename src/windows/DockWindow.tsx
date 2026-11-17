@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import { AiUsageIsland } from "../components/AiUsageIsland";
 import { AppFolderTile } from "../components/AppFolderTile";
 import { DockContextMenu } from "../components/DockContextMenu";
 import {
@@ -704,6 +705,7 @@ export default function DockWindow() {
                   tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
                 />
               )}
+              <AiUsageIsland vertical={vertical} />
               <div className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5">
                 <div className="flex flex-col leading-none">
                   <span className="text-[9px] font-semibold tracking-wider opacity-55">

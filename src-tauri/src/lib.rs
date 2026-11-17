@@ -916,7 +916,7 @@ async fn open_settings(app: AppHandle) {
         let _ = window.set_focus();
         return;
     }
-    let _ = WebviewWindowBuilder::new(
+    if let Ok(window) = WebviewWindowBuilder::new(
         &app,
         "settings",
         WebviewUrl::App(std::path::PathBuf::from("index.html?win=settings")),
@@ -928,7 +928,11 @@ async fn open_settings(app: AppHandle) {
     .resizable(true)
     .transparent(false)
     .center()
-    .build();
+    .build()
+    {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// Widget flyout: a small glass panel anchored by the dock that hosts one
@@ -1326,7 +1330,6 @@ pub fn run() {
                 }
                 win32::monitors::spawn_display_watcher(handle.clone());
                 win32::monitors::sync_docks(&handle);
-                win32::liquid_glass::start(handle.clone());
                 win32::hotkey::spawn(handle.clone());
                 win32::profiles::spawn(handle.clone());
                 win32::automations::spawn(handle.clone());

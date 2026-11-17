@@ -227,7 +227,7 @@ unsafe extern "system" fn watch_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE {
+    if msg == WM_DISPLAYCHANGE {
         if let Some(app) = APP.get() {
             let handle = app.clone();
             let _ = app.run_on_main_thread(move || sync_docks(&handle));

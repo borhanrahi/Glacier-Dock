@@ -19,7 +19,6 @@ import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/Dropzo
 import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
 import { attachFisheye } from "../sdk/fisheye";
 import { useAppIcon, useTelemetry } from "../sdk/hooks";
-import { LiquidRefraction } from "../styles/liquid-refraction";
 import {
   applyAccent,
   applyDockMetrics,
@@ -118,10 +117,7 @@ function AppIcon({ app }: { app: InstalledApp }) {
 
 export default function DockWindow() {
   const pillRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
-  const seqRef = useRef(0);
-  const draggedApp = useRef<InstalledApp | null>(null);
 
   const [layout, setLayout] = useState<DockLayout | null>(null);
   const [apps, setApps] = useState<InstalledApp[]>([]);
@@ -348,57 +344,6 @@ export default function DockWindow() {
     };
   }, [layout, apps, folders, widgets, showTelemetryRings, showAiUsage, showQuickFolders]);
 
-  // Liquid glass capture -> WebGL2 refraction.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const pill = pillRef.current;
-    if (!canvas || !pill || !layout) return;
-
-    const glass = new LiquidRefraction(canvas);
-    if (!glass.supported) return;
-
-    const syncSize = () => {
-      const rect = pill.getBoundingClientRect();
-      glass.resize(rect.width, rect.height);
-      glass.render();
-    };
-    syncSize();
-    const observer = new ResizeObserver(syncSize);
-    observer.observe(pill);
-
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
-    listen("glacier://glass-frame", async () => {
-      if (disposed) return;
-      try {
-        const buffer = await invoke<ArrayBuffer>("glass_frame", { since: seqRef.current });
-        if (!buffer || buffer.byteLength < 8) return;
-        const view = new DataView(buffer);
-        const width = view.getUint32(0, true);
-        const height = view.getUint32(4, true);
-        if (!width || !height) return;
-        seqRef.current += 1;
-        glass.uploadFrame(new Uint8Array(buffer, 8), width, height);
-        glass.render();
-      } catch {
-        /* capture unavailable */
-      }
-    })
-      .then((fn) => {
-        if (disposed) fn();
-        else unlisten = fn;
-      })
-      .catch(() => {});
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-      observer.disconnect();
-      glass.dispose();
-    };
-  }, [layout]);
-
   // macOS parabolic fisheye wave over app & folder icons only.
   useEffect(() => {
     const row = rowRef.current;
@@ -474,22 +419,6 @@ export default function DockWindow() {
       return next;
     });
   }, []);
-
-  const createFolder = (target: InstalledApp) => {
-    const source = draggedApp.current;
-    draggedApp.current = null;
-    if (!source || source.path === target.path) return;
-    setFolders((current) => [
-      ...current,
-      {
-        id: `folder-${Date.now()}`,
-        name: "New Folder",
-        color: "#38BDF8",
-        apps: [source, target],
-      },
-    ]);
-    setApps((current) => current.filter((app) => app.path !== source.path && app.path !== target.path));
-  };
 
   const edge = layout?.edge ?? "bottom";
   const vertical = edge === "left" || edge === "right";
@@ -567,13 +496,6 @@ export default function DockWindow() {
       >
         {!attached && edge === "bottom" && <span className="glacier-dock-sheen" aria-hidden />}
 
-        <canvas
-          ref={canvasRef}
-          aria-hidden
-          className="pointer-events-none absolute inset-0 h-full w-full"
-          style={{ borderRadius: attached ? 0 : "var(--glacier-radius)" }}
-        />
-
         <div
           ref={rowRef}
           className={`relative flex items-end gap-1.5 overflow-visible ${
@@ -592,27 +514,6 @@ export default function DockWindow() {
                 data-icon
                 data-app-icon
                 type="button"
-                draggable
-                onDragStart={() => (draggedApp.current = app)}
-                onDragEnd={(event) => {
-                  const pill = pillRef.current;
-                  if (!pill) return;
-                  const rect = pill.getBoundingClientRect();
-                  const outside =
-                    event.clientY < rect.top - 42 ||
-                    event.clientY > rect.bottom + 42 ||
-                    event.clientX < rect.left - 42 ||
-                    event.clientX > rect.right + 42;
-                  if (outside && draggedApp.current?.path === app.path) {
-                    draggedApp.current = null;
-                    togglePinApp(app);
-                  }
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  createFolder(app);
-                }}
                 onClick={() => launch(app)}
                 onContextMenu={(event) => {
                   event.preventDefault();

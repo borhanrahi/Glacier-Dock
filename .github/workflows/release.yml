@@ -1,30 +1,5 @@
 name: Build
 
-# Standard GitHub-hosted runners only (free minutes on public repos).
-# No larger/self-hosted runners are configured, so nothing is billed.
-#
-# Output policy (keeps us inside the free plan):
-#   * Tag pushes (v*)  -> installers attached to a GitHub Release. Release
-#                         assets are free and do NOT count against Actions
-#                         artifact storage.
-#   * main / PR pushes -> build validation only, with 3-day artifacts, pruned
-#                         to the 2 most recent builds by the cleanup job.
-#
-# Versioning: automatic. A v* tag sets the app version to the tag (v0.2.0 ->
-# 0.2.0); any other run gets 0.1.<run_number>. The version is written into
-# package.json, tauri.conf.json and Cargo.toml during CI only — nothing is
-# committed back.
-#
-# Windows note: GitHub only offers Windows Server images, so the Windows 10/11
-# installers are produced from windows-latest (Windows 11 kernel family). The
-# NSIS/MSI installers target Windows 10 1809+ and Windows 11 alike. Verifying on
-# real Win10/Win11 desktops needs a self-hosted runner.
-#
-# Linux note: ubuntu-22.04 is a standard free runner (not a larger runner). It is
-# used instead of ubuntu-latest because it links against glibc 2.35, so the
-# AppImage/deb run on Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and other
-# current distros rather than only Ubuntu 24.04+.
-
 on:
   push:
     branches: [main]
@@ -39,22 +14,73 @@ on:
       version:
         description: "Release version (without the v), e.g. 0.2.0"
         type: string
-        required: true
+        required: false
 
 permissions:
-  contents: write # required to create the release and upload installers
+  contents: write
 
 jobs:
+  create-release:
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag_name: ${{ steps.get_version.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: get_version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            VER="${TAG#v}"
+          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_VERSION}" ]]; then
+            VER="${INPUT_VERSION#v}"
+            TAG="v${VER}"
+          else
+            VER="0.2.${GITHUB_RUN_NUMBER}"
+            TAG="v${VER}"
+          fi
+          if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release version '$VER' (expected something like 0.2.0)"
+            exit 1
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Building Release Version: ${VER} (${TAG})"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.tag_name }}
+          name: Glacier Dock ${{ steps.get_version.outputs.tag_name }}
+          body: |
+            Free and open-source liquid glass dock for Windows.
+
+            | Platform | Files |
+            | --- | --- |
+            | Windows 10/11 (x64) | `.exe` (NSIS installer), `.msi` |
+            | macOS Apple Silicon | `.dmg`, `.app` |
+            | macOS Intel | `.dmg`, `.app` |
+            | Linux | `.AppImage`, `.deb`, `.rpm` |
+
+            Linux packages are built on Ubuntu 22.04 (glibc 2.35): fine on Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and other current distros.
+
+            Every asset is listed in a `SHA256SUMS-<platform>.txt` file in the same release so a download can be verified:
+            `sha256sum -c SHA256SUMS-windows-x64.txt`.
+          draft: false
+          prerelease: false
+
   build:
     name: ${{ matrix.name }}
+    needs: create-release
+    if: always() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
     runs-on: ${{ matrix.os }}
-    # Job-level so the matrix context is available; workflow-level concurrency
-    # cannot reference matrix and made every run fail at startup.
-    #
-    # Keyed on the commit SHA (not the ref) so that publishing a release tag for
-    # a commit already on main supersedes that commit's validation run instead
-    # of building all four OS targets a second time. Commits that are never
-    # tagged keep exactly one validation run.
     concurrency:
       group: ${{ github.workflow }}-${{ github.sha }}-${{ matrix.artifact }}
       cancel-in-progress: true
@@ -82,24 +108,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve version
+      - name: Apply version
         id: version
         shell: bash
         env:
-          INPUT_VERSION: ${{ inputs.version }}
+          RELEASE_VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_VERSION}" ]]; then
-            VERSION="${INPUT_VERSION#v}"
-          else
-            VERSION="0.2.${GITHUB_RUN_NUMBER}"
-          fi
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Invalid release version '$VERSION' (expected something like 0.2.0)"
-            exit 1
-          fi
+          VERSION="${RELEASE_VERSION:-0.2.${GITHUB_RUN_NUMBER}}"
           export VERSION
           node - <<'NODE'
           const fs = require("fs");
@@ -116,7 +132,6 @@ jobs:
           NODE
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      # webkit2gtk 4.1 + libayatana appindicator + rpmbuild for the RPM target.
       - name: Install Linux build dependencies
         if: startsWith(matrix.os, 'ubuntu')
         run: |
@@ -145,43 +160,24 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # Release runs: a v* tag push, a push to main (published as v0.1.<run_number>
-      # prerelease), or a manual dispatch with release=true.
-      - name: Build and publish release
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)
+      - name: Build and upload to release
+        if: needs.create-release.result == 'success'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --bundles ${{ matrix.bundles }}
-          tagName: v${{ steps.version.outputs.version }}
-          releaseName: Glacier Dock v${{ steps.version.outputs.version }}
-          releaseBody: |
-            Free and open-source liquid glass dock for Windows.
-
-            | Platform | Files |
-            | --- | --- |
-            | Windows 10/11 (x64) | `.exe` (NSIS installer), `.msi` |
-            | macOS Apple Silicon | `.dmg`, `.app` |
-            | macOS Intel | `.dmg`, `.app` |
-            | Linux | `.AppImage`, `.deb`, `.rpm` |
-
-            Linux packages are built on Ubuntu 22.04 (glibc 2.35): fine on Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and other current distros.
-
-            Every asset is listed in a `SHA256SUMS-<platform>.txt` file in the same release so a download can be verified:
-            `sha256sum -c SHA256SUMS-windows-x64.txt`.
+          tagName: ${{ needs.create-release.outputs.tag_name }}
+          releaseName: Glacier Dock ${{ needs.create-release.outputs.tag_name }}
           releaseDraft: false
-          prerelease: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
+          prerelease: false
 
-      # Signing with a purchased certificate is not available here, so publish
-      # per-platform SHA-256 checksums instead: they detect a corrupted or
-      # tampered download without any secret.
       - name: Publish checksums
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)
+        if: needs.create-release.result == 'success'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ steps.version.outputs.version }}
+          TAG: ${{ needs.create-release.outputs.tag_name }}
         run: |
           set -euo pipefail
           stage="$(mktemp -d)"
@@ -206,17 +202,14 @@ jobs:
           cat "$out"
           gh release upload "$TAG" "$out" --repo "${{ github.repository }}" --clobber
 
-      # Validation runs only (PRs or dispatch with release=false): no release, no tag.
-      - name: Build and bundle
-        if: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
+      - name: Build and bundle (validation)
+        if: needs.create-release.result != 'success'
         uses: tauri-apps/tauri-action@v0
         with:
           args: --bundles ${{ matrix.bundles }}
 
-      # Test builds only. Release assets above never hit artifact storage, and
-      # these expire in 3 days so the free 500 MB cap is never reached.
       - name: Upload test bundles
-        if: ${{ !(startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)) }}
+        if: needs.create-release.result != 'success'
         uses: actions/upload-artifact@v4
         with:
           name: glacier-dock-${{ matrix.artifact }}
@@ -225,16 +218,14 @@ jobs:
           retention-days: 3
           compression-level: 0
 
-  # Storage guard: prune old build artifacts and old prerelease builds, keeping
-  # only the 2 most recent of each. Full releases (non-prerelease) are untouched.
   cleanup:
     name: Prune old builds & artifacts
     needs: build
     if: always()
     runs-on: ubuntu-latest
     permissions:
-      contents: write # required to delete old prereleases and their tags
-      actions: write # required to delete artifacts
+      contents: write
+      actions: write
     steps:
       - name: Keep only the 2 most recent builds
         shell: bash
@@ -271,26 +262,21 @@ jobs:
               gh api -X DELETE "repos/${REPO}/actions/artifacts/${artifact_id}" || \
                 echo "  warn: could not delete ${artifact_id}"
             done < sorted.tsv
-          else
-            echo "No build artifacts found — nothing to prune."
           fi
 
-          # Also prune old prerelease builds (keep the 2 most recent), leaving
-          # full releases untouched.
+          # Keep the 2 most recent v0.2.* auto-releases and prune older ones + tags.
           gh api --paginate "repos/${REPO}/releases?per_page=100" \
-            --jq '.[] | select(.prerelease == true) | [.created_at, (.id | tostring), .tag_name] | @tsv' \
-            > prereleases.tsv
+            --jq '.[] | select(.tag_name | startswith("v0.2.")) | [.created_at, (.id | tostring), .tag_name] | @tsv' \
+            > auto_releases.tsv
 
-          if [[ -s prereleases.tsv ]]; then
-            sort -r prereleases.tsv | tail -n +3 | while IFS=$'\t' read -r _created rel_id tag_name; do
-              echo "Deleting old prerelease ${tag_name} (release ${rel_id})"
+          if [[ -s auto_releases.tsv ]]; then
+            sort -r auto_releases.tsv | tail -n +3 | while IFS=$'\t' read -r _created rel_id tag_name; do
+              echo "Deleting old release ${tag_name} (release ${rel_id})"
               gh api -X DELETE "repos/${REPO}/releases/${rel_id}" || \
                 echo "  warn: could not delete release ${rel_id}"
               gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag_name}" || \
                 echo "  warn: could not delete tag ${tag_name}"
             done
-          else
-            echo "No prereleases to prune."
           fi
 
           echo "Prune complete."

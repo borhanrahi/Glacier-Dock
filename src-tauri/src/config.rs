@@ -70,8 +70,10 @@ pub enum BackdropMode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Appearance {
-    /// liquid-glass | ios-glass | midnight | black | white
+    /// liquid-glass | ios-glass | midnight | black | white | prism
     pub preset: String,
+    #[serde(default = "default_icon_plate")]
+    pub icon_plate: String,
     pub backdrop: BackdropMode,
     /// 0..=1, drives `--glacier-tint-alpha`
     pub tint_alpha: f32,
@@ -88,10 +90,15 @@ pub struct Appearance {
     pub width_mode: WidthMode,
 }
 
+fn default_icon_plate() -> String {
+    "none".into()
+}
+
 impl Default for Appearance {
     fn default() -> Self {
         Self {
             preset: "liquid-glass".into(),
+            icon_plate: default_icon_plate(),
             backdrop: BackdropMode::LiquidGlass,
             tint_alpha: 0.58,
             accent: "#38BDF8".into(),
@@ -312,12 +319,22 @@ pub fn default_pinned_apps() -> Vec<PinnedApp> {
     ]
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppConfig {
     /// Bumped when a stored config needs fixing up on load.
     pub config_version: u32,
     pub replace_taskbar: bool,
+    #[serde(default = "default_true")]
+    pub show_telemetry_rings: bool,
+    #[serde(default = "default_true")]
+    pub show_ai_usage: bool,
+    #[serde(default = "default_true")]
+    pub show_quick_folders: bool,
     pub appearance: Appearance,
     pub docks: Vec<DockInstance>,
     pub profiles: Vec<ContextProfile>,
@@ -344,6 +361,9 @@ impl Default for AppConfig {
             // Off by default: hiding the user's taskbar is opt-in, never a
             // surprise after install.
             replace_taskbar: false,
+            show_telemetry_rings: true,
+            show_ai_usage: true,
+            show_quick_folders: true,
             appearance: Appearance::default(),
             docks: Vec::new(),
             profiles: default_profiles(),

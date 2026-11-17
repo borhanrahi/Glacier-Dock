@@ -8,6 +8,15 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  Activity,
+  AppWindow,
+  Info,
+  LayoutGrid,
+  Palette,
+  SlidersHorizontal,
+  Zap,
+} from "lucide-react";
 
 import glacier, { type InstalledWidget } from "../sdk/bridge";
 import { useAppIcon, useTelemetry } from "../sdk/hooks";
@@ -26,6 +35,7 @@ type TabId = "appearance" | "dock" | "widgets" | "automations" | "telemetry" | "
 
 interface AppearanceCfg {
   preset: string;
+  iconPlate?: string;
   backdrop: string;
   tintAlpha: number;
   accent: string;
@@ -82,6 +92,9 @@ interface AdvancedCfg {
 
 interface SettingsConfig {
   replaceTaskbar: boolean;
+  showTelemetryRings?: boolean;
+  showAiUsage?: boolean;
+  showQuickFolders?: boolean;
   appearance: AppearanceCfg;
   docks: DockCfg[];
   profiles: ProfileCfg[];
@@ -95,20 +108,21 @@ interface SettingsConfig {
   longitude: number;
 }
 
-const TABS: Array<{ id: TabId; label: string; glyph: string }> = [
-  { id: "appearance", label: "Appearance", glyph: "◐" },
-  { id: "dock", label: "Dock", glyph: "▬" },
-  { id: "widgets", label: "Widgets & Store", glyph: "▦" },
-  { id: "automations", label: "Automations", glyph: "⚡" },
-  { id: "telemetry", label: "Telemetry", glyph: "◉" },
-  { id: "advanced", label: "Advanced", glyph: "⚙" },
-  { id: "about", label: "About", glyph: "ⓘ" },
+const TABS: Array<{ id: TabId; label: string; icon: ReactNode }> = [
+  { id: "appearance", label: "Appearance", icon: <Palette className="size-4" strokeWidth={1.8} /> },
+  { id: "dock", label: "Dock", icon: <AppWindow className="size-4" strokeWidth={1.8} /> },
+  { id: "widgets", label: "Widgets & Store", icon: <LayoutGrid className="size-4" strokeWidth={1.8} /> },
+  { id: "automations", label: "Automations", icon: <Zap className="size-4" strokeWidth={1.8} /> },
+  { id: "telemetry", label: "Telemetry", icon: <Activity className="size-4" strokeWidth={1.8} /> },
+  { id: "advanced", label: "Advanced", icon: <SlidersHorizontal className="size-4" strokeWidth={1.8} /> },
+  { id: "about", label: "About", icon: <Info className="size-4" strokeWidth={1.8} /> },
 ];
 
 const PRESETS: Array<{ id: string; label: string; swatch: string }> = [
   { id: "liquid-glass", label: "Liquid Glass", swatch: "linear-gradient(135deg,#0f172a,#38bdf8)" },
   { id: "ios-glass", label: "iOS Glass", swatch: "linear-gradient(135deg,#e2e8f0,#ffffff)" },
   { id: "midnight", label: "Midnight", swatch: "linear-gradient(135deg,#101827,#1e293b)" },
+  { id: "prism", label: "Prism", swatch: "linear-gradient(135deg,#181822,#8b5cf6)" },
   { id: "black", label: "Black", swatch: "linear-gradient(135deg,#09090b,#27272a)" },
   { id: "white", label: "White", swatch: "linear-gradient(135deg,#f8fafc,#e2e8f0)" },
 ];
@@ -340,7 +354,7 @@ export default function SettingsWindow() {
                     style={{ background: "var(--glacier-aurora)" }}
                   />
                 )}
-                <span className="w-4 text-center opacity-70">{entry.glyph}</span>
+                <span className="grid w-4 place-items-center opacity-75">{entry.icon}</span>
                 {entry.label}
               </button>
             );
@@ -404,6 +418,21 @@ export default function SettingsWindow() {
             {dirty ? "Unsaved changes" : "All changes saved"} · {WIDGETS.length} widgets in the catalog
           </span>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                invoke<SettingsConfig>("reset_config")
+                  .then((reset) => {
+                    setCfg(reset);
+                    setDirty(false);
+                    setStatus("Restored defaults");
+                  })
+                  .catch(() => {})
+              }
+              className="rounded-md bg-white/10 px-3 py-1.5 text-[11px] hover:bg-white/20"
+            >
+              Restore defaults
+            </button>
             <button
               type="button"
               onClick={() => invoke<SettingsConfig>("get_config").then((loaded) => {
@@ -473,7 +502,7 @@ function AppearanceTab({
       </Section>
 
       <Section title="Preset" hint="Applies to every window">
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-6 gap-2">
           {PRESETS.map((preset) => (
             <button
               key={preset.id}
@@ -524,6 +553,33 @@ function AppearanceTab({
           step={0.02}
           onChange={(value) => patchAppearance({ magnification: value })}
         />
+      </Section>
+
+      <Section title="Icon plates & custom icon packs" hint="OpenTaskbar-style icon framing">
+        <Segmented
+          value={(appearance.iconPlate ?? "none") as "none" | "squircle" | "circle" | "leaf" | "petal"}
+          options={[
+            { value: "none", label: "None" },
+            { value: "squircle", label: "Squircle" },
+            { value: "circle", label: "Circle" },
+            { value: "leaf", label: "Leaf" },
+            { value: "petal", label: "Petal" },
+          ]}
+          onChange={(value) => patchAppearance({ iconPlate: value })}
+        />
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glacier-border)] bg-white/5 px-3 py-2 text-[11px]">
+          <span className="opacity-75">
+            Drop <code className="rounded bg-black/30 px-1 py-0.5 text-[10px]">appname.png</code> or{" "}
+            <code className="rounded bg-black/30 px-1 py-0.5 text-[10px]">.svg</code> into your Icons folder.
+          </span>
+          <button
+            type="button"
+            onClick={() => invoke("open_icons_dir").catch(() => {})}
+            className="shrink-0 rounded-md bg-white/10 px-2.5 py-1 text-[10px] hover:bg-white/20"
+          >
+            Open Icons Folder
+          </button>
+        </div>
       </Section>
 
       <Section title="Solar schedule" hint="Auto day/night presets">
@@ -688,6 +744,14 @@ function DockTab({
     <>
       <Section title="System integration">
         <Toggle
+          label="Start permanently with Windows"
+          hint="Registers Glacier Dock in Windows Startup so it launches automatically on sign-in."
+          checked={cfg.advanced.startWithWindows}
+          onChange={(value) =>
+            patch("advanced", { ...cfg.advanced, startWithWindows: value })
+          }
+        />
+        <Toggle
           label="Replace the Windows taskbar"
           hint="Hides explorer's taskbar and restores it on exit or crash."
           checked={cfg.replaceTaskbar}
@@ -700,6 +764,27 @@ function DockTab({
         >
           Restore the Windows taskbar now
         </button>
+      </Section>
+
+      <Section title="Dock features" hint="Turn individual dock modules on or off">
+        <Toggle
+          label="Live telemetry rings (CPU / RAM / BAT)"
+          hint="Compact circular gauges in the dock island."
+          checked={cfg.showTelemetryRings ?? true}
+          onChange={(value) => patch("showTelemetryRings", value)}
+        />
+        <Toggle
+          label="AI Plan Usage Island"
+          hint="Live quota rings for Claude Code, Codex, OpenCode Go, Gemini & Antigravity."
+          checked={cfg.showAiUsage ?? true}
+          onChange={(value) => patch("showAiUsage", value)}
+        />
+        <Toggle
+          label="Downloads & Recycle Bin shortcuts"
+          hint="Quick-access stack buttons next to system controls."
+          checked={cfg.showQuickFolders ?? true}
+          onChange={(value) => patch("showQuickFolders", value)}
+        />
       </Section>
 
       <PinnedAppsSection cfg={cfg} patch={patch} />
@@ -932,6 +1017,19 @@ function WidgetsTab({
                     {CATEGORY_META[widget.category].label}
                   </span>
                   <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        invoke("open_widget", {
+                          id: widget.id,
+                          width: widget.width,
+                          height: widget.height,
+                        }).catch(() => {})
+                      }
+                      className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] hover:bg-white/20"
+                    >
+                      open
+                    </button>
                     {isInstalled && (
                       <button
                         type="button"

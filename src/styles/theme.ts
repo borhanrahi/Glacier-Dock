@@ -6,9 +6,16 @@
 
 import { isDaytime } from "./solar";
 
-export type PresetName = "liquid-glass" | "ios-glass" | "midnight" | "black" | "white";
+export type PresetName = "liquid-glass" | "ios-glass" | "midnight" | "black" | "white" | "prism";
 
-export const PRESETS: PresetName[] = ["liquid-glass", "ios-glass", "midnight", "black", "white"];
+export const PRESETS: PresetName[] = [
+  "liquid-glass",
+  "ios-glass",
+  "midnight",
+  "black",
+  "white",
+  "prism",
+];
 
 /** Base surface colour per preset, used to rebuild `--glacier-surface` with a
  *  live tint alpha. Kept in sync with glacier-tokens.css. */
@@ -18,6 +25,7 @@ const PRESET_BASE: Record<PresetName, [number, number, number]> = {
   midnight: [20, 24, 36],
   black: [13, 15, 20],
   white: [244, 246, 250],
+  prism: [24, 24, 34],
 };
 
 function normalizePreset(name: string): PresetName {

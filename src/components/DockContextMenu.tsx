@@ -230,9 +230,22 @@ export function DockSurfaceMenu({
       {hasShelf && item("Toggle Dropzone Shelf", null, onToggleShelf)}
       <div className="my-1 h-px bg-white/[0.10]" />
       {item("Glacier Settings", null, () => invoke("open_settings").catch(() => {}))}
+      {item("Restore Default Settings", null, () => invoke("reset_config").catch(() => {}))}
       {item("Restore Windows Taskbar", null, () =>
         invoke("restore_native_taskbar").catch(() => {}),
       )}
+      <div className="my-1 h-px bg-white/[0.10]" />
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          invoke("quit_app").catch(() => {});
+          onClose();
+        }}
+        className="flex w-full items-center justify-between rounded-[9px] px-2.5 py-1.5 text-left text-red-300 transition-colors hover:bg-red-500/20"
+      >
+        <span>Quit Glacier Dock</span>
+      </button>
     </div>
   );
 }

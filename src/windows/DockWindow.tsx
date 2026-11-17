@@ -44,11 +44,13 @@ interface DockLayout {
 
 interface Appearance {
   preset: string;
+  iconPlate?: string;
   tintAlpha: number;
   solarAuto: boolean;
   solarDayPreset: string;
   solarNightPreset: string;
   chameleonTint: boolean;
+  magnification?: number;
 }
 
 interface AppConfig {
@@ -56,6 +58,9 @@ interface AppConfig {
   latitude: number;
   longitude: number;
   dockWidgets?: string[];
+  showTelemetryRings?: boolean;
+  showAiUsage?: boolean;
+  showQuickFolders?: boolean;
 }
 
 interface FolderGroup {
@@ -119,6 +124,11 @@ export default function DockWindow() {
   const [draggingDock, setDraggingDock] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [widgets, setWidgets] = useState<string[]>([]);
+  const [magnification, setMagnification] = useState(1.36);
+  const [iconPlate, setIconPlate] = useState("none");
+  const [showTelemetryRings, setShowTelemetryRings] = useState(true);
+  const [showAiUsage, setShowAiUsage] = useState(true);
+  const [showQuickFolders, setShowQuickFolders] = useState(true);
   const [clock, setClock] = useState(() => new Date());
   const [bouncingApp, setBouncingApp] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ app: InstalledApp; x: number } | null>(null);
@@ -150,6 +160,11 @@ export default function DockWindow() {
         applyPreset(next.highContrast ? "black" : cfg.appearance.preset);
         applyTintAlpha(cfg.appearance.tintAlpha);
         setWidgets(cfg.dockWidgets ?? []);
+        setMagnification(cfg.appearance.magnification ?? 1.36);
+        setIconPlate(cfg.appearance.iconPlate ?? "none");
+        setShowTelemetryRings(cfg.showTelemetryRings ?? true);
+        setShowAiUsage(cfg.showAiUsage ?? true);
+        setShowQuickFolders(cfg.showQuickFolders ?? true);
 
         if (cfg.appearance.chameleonTint) {
           const accent = await invoke<string | null>("wallpaper_accent");
@@ -259,6 +274,26 @@ export default function DockWindow() {
     return () => unlisten?.();
   }, []);
 
+  // Live config updates from Settings / Reset.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<AppConfig>("glacier://config", (event) => {
+      const cfg = event.payload;
+      if (!cfg) return;
+      applyPreset(layout?.highContrast ? "black" : cfg.appearance.preset);
+      applyTintAlpha(cfg.appearance.tintAlpha);
+      setWidgets(cfg.dockWidgets ?? []);
+      setMagnification(cfg.appearance.magnification ?? 1.36);
+      setIconPlate(cfg.appearance.iconPlate ?? "none");
+      setShowTelemetryRings(cfg.showTelemetryRings ?? true);
+      setShowAiUsage(cfg.showAiUsage ?? true);
+      setShowQuickFolders(cfg.showQuickFolders ?? true);
+    })
+      .then((fn) => (unlisten = fn))
+      .catch(() => {});
+    return () => unlisten?.();
+  }, [layout]);
+
   // Report the pill rect: WM_NCHITTEST headroom + DXGI capture region.
   useEffect(() => {
     const pill = pillRef.current;
@@ -275,8 +310,12 @@ export default function DockWindow() {
     report();
     const observer = new ResizeObserver(report);
     observer.observe(pill);
-    return () => observer.disconnect();
-  }, [layout]);
+    window.addEventListener("resize", report);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", report);
+    };
+  }, [layout, apps, folders, widgets, showTelemetryRings, showAiUsage, showQuickFolders]);
 
   // Liquid glass capture -> WebGL2 refraction.
   useEffect(() => {
@@ -329,23 +368,31 @@ export default function DockWindow() {
     };
   }, [layout]);
 
-  // 1.52x macOS parabolic fisheye wave over the icon row.
+  // macOS parabolic fisheye wave over app & folder icons only.
   useEffect(() => {
     const row = rowRef.current;
     if (!row || !layout) return;
+    if (magnification <= 1.01) {
+      for (const icon of Array.from(row.querySelectorAll<HTMLElement>("[data-icon]"))) {
+        icon.style.setProperty("--icon-scale", "1");
+        icon.style.setProperty("--icon-lift", "0px");
+        icon.style.setProperty("--icon-spread", "0px");
+      }
+      return;
+    }
     const vertical = layout.edge === "left" || layout.edge === "right";
     return attachFisheye(
       row,
       () => Array.from(row.querySelectorAll<HTMLElement>("[data-icon]")),
       {
-        maxScale: 1.52,
-        radius: 155,
+        maxScale: Math.min(1.42, Math.max(1.1, magnification)),
+        radius: 145,
         orientation: vertical ? "vertical" : "horizontal",
-        displacement: 10,
-        spread: 18,
+        displacement: 8,
+        spread: 14,
       },
     );
-  }, [layout, apps, folders, widgets]);
+  }, [layout, apps, folders, magnification]);
 
   const launch = useCallback(async (app: InstalledApp) => {
     setBouncingApp(app.path);
@@ -467,7 +514,7 @@ export default function DockWindow() {
         onPointerDown={onPillPointerDown}
         onContextMenu={(event) => {
           const target = event.target as HTMLElement;
-          if (target.closest("[data-icon]")) return;
+          if (target.closest("[data-app-icon]")) return;
           event.preventDefault();
           setContextMenu(null);
           setSurfaceMenuX(event.clientX);
@@ -503,13 +550,30 @@ export default function DockWindow() {
           {pinned.map((app) => {
             const isRunning = running.includes(app.path);
             const isBouncing = bouncingApp === app.path;
+            const plateClass =
+              iconPlate && iconPlate !== "none" ? `glacier-plate-${iconPlate}` : "";
             return (
               <button
                 key={app.path}
                 data-icon
+                data-app-icon
                 type="button"
                 draggable
                 onDragStart={() => (draggedApp.current = app)}
+                onDragEnd={(event) => {
+                  const pill = pillRef.current;
+                  if (!pill) return;
+                  const rect = pill.getBoundingClientRect();
+                  const outside =
+                    event.clientY < rect.top - 42 ||
+                    event.clientY > rect.bottom + 42 ||
+                    event.clientX < rect.left - 42 ||
+                    event.clientX > rect.right + 42;
+                  if (outside && draggedApp.current?.path === app.path) {
+                    draggedApp.current = null;
+                    togglePinApp(app);
+                  }
+                }}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
                   event.preventDefault();
@@ -537,7 +601,7 @@ export default function DockWindow() {
               >
                 {!vertical && <span className="glacier-dock-tip">{app.name}</span>}
                 <span
-                  className={`grid size-full place-items-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${
+                  className={`grid size-full place-items-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${plateClass} ${
                     isBouncing ? "glacier-launch-bounce" : ""
                   }`}
                 >
@@ -595,7 +659,6 @@ export default function DockWindow() {
             return (
               <button
                 key={id}
-                data-icon
                 data-no-drag
                 type="button"
                 aria-label={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
@@ -612,9 +675,6 @@ export default function DockWindow() {
                 style={{
                   height: "calc(var(--glacier-icon-base) * 0.9)",
                   minWidth: "calc(var(--glacier-icon-base) * 0.9)",
-                  transform:
-                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-                  transformOrigin: vertical ? "center left" : "center bottom",
                 }}
               >
                 {!vertical && <span className="glacier-dock-tip">{meta.name}</span>}
@@ -630,46 +690,43 @@ export default function DockWindow() {
             );
           })}
 
-          <button
-            data-icon
-            data-no-drag
-            type="button"
-            aria-label="Downloads"
-            onClick={() => invoke("open_path", { path: "shell:Downloads" }).catch(() => {})}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
-            style={{
-              width: "calc(var(--glacier-icon-base) * 0.92)",
-              height: "calc(var(--glacier-icon-base) * 0.92)",
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
-            }}
-          >
-            {!vertical && <span className="glacier-dock-tip">Downloads</span>}
-            <DownloadsIcon />
-          </button>
+          {showQuickFolders && (
+            <>
+              <button
+                data-no-drag
+                type="button"
+                aria-label="Downloads"
+                onClick={() => invoke("open_path", { path: "shell:Downloads" }).catch(() => {})}
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+                style={{
+                  width: "calc(var(--glacier-icon-base) * 0.92)",
+                  height: "calc(var(--glacier-icon-base) * 0.92)",
+                }}
+              >
+                {!vertical && <span className="glacier-dock-tip">Downloads</span>}
+                <DownloadsIcon />
+              </button>
+
+              <button
+                data-no-drag
+                type="button"
+                aria-label="Recycle Bin"
+                onClick={() =>
+                  invoke("open_path", { path: "shell:RecycleBinFolder" }).catch(() => {})
+                }
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+                style={{
+                  width: "calc(var(--glacier-icon-base) * 0.92)",
+                  height: "calc(var(--glacier-icon-base) * 0.92)",
+                }}
+              >
+                {!vertical && <span className="glacier-dock-tip">Recycle Bin</span>}
+                <TrashBinIcon />
+              </button>
+            </>
+          )}
 
           <button
-            data-icon
-            data-no-drag
-            type="button"
-            aria-label="Recycle Bin"
-            onClick={() => invoke("open_path", { path: "shell:RecycleBinFolder" }).catch(() => {})}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
-            style={{
-              width: "calc(var(--glacier-icon-base) * 0.92)",
-              height: "calc(var(--glacier-icon-base) * 0.92)",
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
-            }}
-          >
-            {!vertical && <span className="glacier-dock-tip">Recycle Bin</span>}
-            <TrashBinIcon />
-          </button>
-
-          <button
-            data-icon
             data-no-drag
             type="button"
             aria-label="App Library"
@@ -678,9 +735,6 @@ export default function DockWindow() {
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">App Library</span>}
@@ -688,7 +742,6 @@ export default function DockWindow() {
           </button>
 
           <button
-            data-icon
             data-no-drag
             type="button"
             aria-label="Glacier Activity Monitor"
@@ -697,9 +750,6 @@ export default function DockWindow() {
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">Activity Monitor</span>}
@@ -707,7 +757,6 @@ export default function DockWindow() {
           </button>
 
           <button
-            data-icon
             data-no-drag
             type="button"
             aria-label="Glacier Settings"
@@ -716,9 +765,6 @@ export default function DockWindow() {
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">Settings</span>}
@@ -726,7 +772,6 @@ export default function DockWindow() {
           </button>
 
           <button
-            data-icon
             data-no-drag
             type="button"
             aria-label="Spotlight (Alt + Space)"
@@ -735,9 +780,6 @@ export default function DockWindow() {
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">Spotlight (Alt + Space)</span>}
@@ -749,35 +791,39 @@ export default function DockWindow() {
           <>
             <span className={dividerClass} aria-hidden />
             <div data-no-drag className="relative flex items-center gap-1.5">
-              <DockRingMeter
-                label="CPU"
-                value={telemetry.cpuPercent}
-                tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
-                onClick={() => invoke("task_manager").catch(() => {})}
-              />
-              <DockRingMeter
-                label="RAM"
-                value={telemetry.ramPercent}
-                tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
-                onClick={() => invoke("task_manager").catch(() => {})}
-              />
-              {telemetry.gpuPercent !== null && (
-                <DockRingMeter
-                  label="GPU"
-                  value={telemetry.gpuPercent}
-                  tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
-                  onClick={() => invoke("task_manager").catch(() => {})}
-                />
+              {showTelemetryRings && (
+                <>
+                  <DockRingMeter
+                    label="CPU"
+                    value={telemetry.cpuPercent}
+                    tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
+                    onClick={() => invoke("task_manager").catch(() => {})}
+                  />
+                  <DockRingMeter
+                    label="RAM"
+                    value={telemetry.ramPercent}
+                    tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
+                    onClick={() => invoke("task_manager").catch(() => {})}
+                  />
+                  {telemetry.gpuPercent !== null && (
+                    <DockRingMeter
+                      label="GPU"
+                      value={telemetry.gpuPercent}
+                      tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
+                      onClick={() => invoke("task_manager").catch(() => {})}
+                    />
+                  )}
+                  {telemetry.batteryPercent !== null && (
+                    <DockRingMeter
+                      label="BAT"
+                      value={telemetry.batteryPercent}
+                      charging={telemetry.batteryCharging}
+                      tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
+                    />
+                  )}
+                </>
               )}
-              {telemetry.batteryPercent !== null && (
-                <DockRingMeter
-                  label="BAT"
-                  value={telemetry.batteryPercent}
-                  charging={telemetry.batteryCharging}
-                  tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
-                />
-              )}
-              <AiUsageIsland vertical={vertical} />
+              {showAiUsage && <AiUsageIsland vertical={vertical} />}
               <div className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5">
                 <div className="flex flex-col leading-none">
                   <span className="text-[9px] font-semibold tracking-wider opacity-55">

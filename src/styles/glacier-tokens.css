@@ -136,6 +136,33 @@ html[data-glacier-preset="white"] {
   --glacier-blur: 0px;
 }
 
+html[data-glacier-preset="prism"] {
+  --glacier-theme-preset: "prism";
+  --glacier-surface: rgba(24, 24, 34, 0.88);
+  --glacier-dock-bg: linear-gradient(
+    180deg,
+    rgba(34, 34, 48, 0.88) 0%,
+    rgba(20, 20, 29, 0.94) 100%
+  );
+  --glacier-elevated: rgba(28, 28, 40, 0.94);
+  --glacier-border: rgba(167, 139, 250, 0.24);
+  --glacier-rim-gradient: linear-gradient(
+    135deg,
+    rgba(196, 181, 253, 0.55) 0%,
+    rgba(139, 92, 246, 0.14) 45%,
+    rgba(167, 139, 250, 0.35) 100%
+  );
+  --glacier-specular: inset 0 1px 0 rgba(196, 181, 253, 0.26);
+  --glacier-text: #f3f0ff;
+  --glacier-text-muted: rgba(233, 228, 255, 0.62);
+  --glacier-accent: #a78bfa;
+  --glacier-aurora: linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 55%, #6366f1 100%);
+  --glacier-aurora-line: linear-gradient(90deg, #c4b5fd 0%, #8b5cf6 100%);
+  --glacier-tint-alpha: 0.88;
+  --glacier-saturation: 160%;
+  --glacier-blur: 24px;
+}
+
 :root {
   /* Shape + geometry, driven from Settings -> Appearance */
   --glacier-radius: 20px;
@@ -247,24 +274,27 @@ select {
 .glacier-dock-tip {
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 14px);
-  transform: translate(-50%, 4px);
-  padding: 4px 10px;
+  bottom: calc(100% + 6px);
+  transform: translate(-50%, 3px);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 9px;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(16, 19, 26, 0.84);
+  border-radius: 7px;
+  background: rgba(16, 19, 26, 0.88);
   backdrop-filter: blur(14px) saturate(160%);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.36);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.25;
   color: #f8fafc;
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
   transition:
-    opacity 140ms ease,
-    transform 160ms var(--glacier-spring);
+    opacity 130ms ease,
+    transform 150ms var(--glacier-spring);
   z-index: 40;
 }
 
@@ -331,6 +361,33 @@ html[data-glacier-preset="white"] .glacier-widget-pill:hover {
 
 .glacier-no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* OpenTaskbar-style icon fallback plates */
+.glacier-plate-squircle,
+.glacier-plate-circle,
+.glacier-plate-leaf,
+.glacier-plate-petal {
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.glacier-plate-squircle {
+  border-radius: 11px;
+}
+
+.glacier-plate-circle {
+  border-radius: 9999px;
+}
+
+.glacier-plate-leaf {
+  border-radius: 14px 4px 14px 4px;
+}
+
+.glacier-plate-petal {
+  border-radius: 14px 14px 4px 14px;
 }
 
 /* Semantic status glow used by widget alert thresholds (AI quota, CPU > 90%) */

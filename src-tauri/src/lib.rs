@@ -60,6 +60,11 @@ fn save_config(app: AppHandle, cfg: AppConfig) {
     config::save(&app, &cfg);
     #[cfg(windows)]
     {
+        if cfg.replace_taskbar {
+            let _ = win32::taskbar::hide();
+        } else if win32::taskbar::hides_taskbar() {
+            win32::taskbar::restore();
+        }
         win32::monitors::sync_docks(&app);
         // Apply the startup toggle for real so it shows up in Task Manager and
         // Windows Settings → Apps → Startup, where it can also be turned off.
@@ -70,7 +75,21 @@ fn save_config(app: AppHandle, cfg: AppConfig) {
     {
         use tauri::Emitter;
         let _ = app.emit("glacier://pins", cfg.pinned_apps.clone());
+        let _ = app.emit("glacier://config", cfg);
     }
+}
+
+#[tauri::command]
+fn reset_config(app: AppHandle) -> AppConfig {
+    let cfg = AppConfig::default();
+    save_config(app, cfg.clone());
+    cfg
+}
+
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    restore_taskbar();
+    app.exit(0);
 }
 
 /// Apps pinned to every dock, in user order.
@@ -90,9 +109,64 @@ fn set_pinned_apps(app: AppHandle, apps: Vec<config::PinnedApp>) {
     let _ = app.emit("glacier://pins", cfg.pinned_apps);
 }
 
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = *chunk.get(1).unwrap_or(&0) as usize;
+        let b2 = *chunk.get(2).unwrap_or(&0) as usize;
+        out.push(TABLE[b0 >> 2] as char);
+        out.push(TABLE[((b0 & 0x03) << 4) | (b1 >> 4)] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[((b1 & 0x0f) << 2) | (b2 >> 6)] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[b2 & 0x3f] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+fn custom_pack_icon(path: &str) -> Option<String> {
+    let stem = std::path::Path::new(path)
+        .file_stem()?
+        .to_str()?
+        .to_ascii_lowercase();
+    if stem.is_empty() {
+        return None;
+    }
+    let dir = config::data_dir().join("Icons");
+    for (ext, mime) in [
+        ("png", "image/png"),
+        ("svg", "image/svg+xml"),
+        ("webp", "image/webp"),
+    ] {
+        let candidate = dir.join(format!("{stem}.{ext}"));
+        if let Ok(bytes) = std::fs::read(&candidate) {
+            return Some(format!("data:{mime};base64,{}", base64_encode(&bytes)));
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn open_icons_dir() -> Result<(), String> {
+    let dir = config::data_dir().join("Icons");
+    let _ = std::fs::create_dir_all(&dir);
+    open_path(dir.to_string_lossy().into_owned())
+}
+
 /// PNG data URL for a shortcut's shell icon, used by the dock and library.
 #[tauri::command]
 fn app_icon(path: String) -> Option<String> {
+    if let Some(custom) = custom_pack_icon(&path) {
+        return Some(custom);
+    }
     #[cfg(windows)]
     {
         return win32::icons::icon_data_url(&path);
@@ -909,6 +983,55 @@ pub fn toggle_spotlight(app: &AppHandle) {
 }
 
 #[tauri::command]
+fn media_key(action: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+            VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK, VK_VOLUME_DOWN,
+            VK_VOLUME_MUTE, VK_VOLUME_UP,
+        };
+        let vk: VIRTUAL_KEY = match action.as_str() {
+            "play_pause" => VK_MEDIA_PLAY_PAUSE,
+            "next" => VK_MEDIA_NEXT_TRACK,
+            "prev" => VK_MEDIA_PREV_TRACK,
+            "mute" => VK_VOLUME_MUTE,
+            "vol_up" => VK_VOLUME_UP,
+            "vol_down" => VK_VOLUME_DOWN,
+            _ => return Err(format!("unknown media action: {action}")),
+        };
+        let down = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    ..Default::default()
+                },
+            },
+        };
+        let up = INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    dwFlags: KEYEVENTF_KEYUP,
+                    ..Default::default()
+                },
+            },
+        };
+        unsafe {
+            SendInput(&[down, up], std::mem::size_of::<INPUT>() as i32);
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = action;
+        Err("media keys are only available on Windows".into())
+    }
+}
+
+#[tauri::command]
 fn restore_native_taskbar() {
     #[cfg(windows)]
     win32::taskbar::restore();
@@ -947,6 +1070,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            reset_config,
+            quit_app,
+            media_key,
             dock_layout,
             set_pill_rect,
             glass_frame,
@@ -956,6 +1082,7 @@ pub fn run() {
             installed_apps,
             launch_app,
             app_icon,
+            open_icons_dir,
             pinned_apps,
             set_pinned_apps,
             autostart_registered,

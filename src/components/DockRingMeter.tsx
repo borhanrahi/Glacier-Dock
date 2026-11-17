@@ -39,17 +39,14 @@ export function DockRingMeter({
 
   return (
     <button
-      data-icon
       data-no-drag
       type="button"
       aria-label={tooltip}
       onClick={onClick}
       className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-95"
       style={{
-        width: "calc(var(--glacier-icon-base) * 0.96)",
-        height: "calc(var(--glacier-icon-base) * 0.96)",
-        transform: "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-        transformOrigin: vertical ? "center left" : "center bottom",
+        width: "calc(var(--glacier-icon-base) * 0.94)",
+        height: "calc(var(--glacier-icon-base) * 0.94)",
       }}
     >
       {!vertical && <span className="glacier-dock-tip">{tooltip}</span>}

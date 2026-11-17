@@ -358,9 +358,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             config_version: 1,
-            // Off by default: hiding the user's taskbar is opt-in, never a
-            // surprise after install.
-            replace_taskbar: false,
+            replace_taskbar: true,
             show_telemetry_rings: true,
             show_ai_usage: true,
             show_quick_folders: true,

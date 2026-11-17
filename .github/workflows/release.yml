@@ -30,7 +30,7 @@ jobs:
       version: ${{ steps.get_version.outputs.version }}
       tag_name: ${{ steps.get_version.outputs.tag_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Determine Version
         id: get_version
@@ -57,26 +57,31 @@ jobs:
           echo "Building Release Version: ${VER} (${TAG})"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.get_version.outputs.tag_name }}
-          name: Glacier Dock ${{ steps.get_version.outputs.tag_name }}
-          body: |
-            Free and open-source liquid glass dock for Windows.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.get_version.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          cat <<'EOF' > "$RUNNER_TEMP/release-notes.md"
+          Free and open-source liquid glass dock for Windows.
 
-            | Platform | Files |
-            | --- | --- |
-            | Windows 10/11 (x64) | `.exe` (NSIS installer), `.msi` |
-            | macOS Apple Silicon | `.dmg`, `.app` |
-            | macOS Intel | `.dmg`, `.app` |
-            | Linux | `.AppImage`, `.deb`, `.rpm` |
+          | Platform | Files |
+          | --- | --- |
+          | Windows 10/11 (x64) | `.exe` (NSIS installer), `.msi` |
+          | macOS Apple Silicon | `.dmg`, `.app` |
+          | macOS Intel | `.dmg`, `.app` |
+          | Linux | `.AppImage`, `.deb`, `.rpm` |
 
-            Linux packages are built on Ubuntu 22.04 (glibc 2.35): fine on Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and other current distros.
+          Linux packages are built on Ubuntu 22.04 (glibc 2.35): fine on Ubuntu 22.04+, Debian 12+, Fedora 36+, Arch and other current distros.
 
-            Every asset is listed in a `SHA256SUMS-<platform>.txt` file in the same release so a download can be verified:
-            `sha256sum -c SHA256SUMS-windows-x64.txt`.
-          draft: false
-          prerelease: false
+          Every asset is listed in a `SHA256SUMS-<platform>.txt` file in the same release so a download can be verified:
+          `sha256sum -c SHA256SUMS-windows-x64.txt`.
+          EOF
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "${{ github.repository }}" --title "Glacier Dock $TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create "$TAG" --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "Glacier Dock $TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
 
   build:
     name: ${{ matrix.name }}
@@ -110,7 +115,7 @@ jobs:
             artifact: linux-x64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Apply version
         id: version
@@ -149,7 +154,7 @@ jobs:
             build-essential \
             curl wget file patchelf rpm
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -214,7 +219,7 @@ jobs:
 
       - name: Upload test bundles
         if: needs.create-release.result != 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: glacier-dock-${{ matrix.artifact }}
           path: src-tauri/target/release/bundle/**

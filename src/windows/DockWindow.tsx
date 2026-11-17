@@ -516,8 +516,7 @@ export default function DockWindow() {
           const target = event.target as HTMLElement;
           if (target.closest("[data-app-icon]")) return;
           event.preventDefault();
-          setContextMenu(null);
-          setSurfaceMenuX(event.clientX);
+          invoke("show_dock_menu").catch(() => setSurfaceMenuX(event.clientX));
         }}
         className={`glacier-dock-glass relative flex items-center gap-1.5 overflow-visible px-2.5 ${
           draggingDock ? "ring-2 ring-[var(--glacier-accent)]" : ""
@@ -583,7 +582,10 @@ export default function DockWindow() {
                 onContextMenu={(event) => {
                   event.preventDefault();
                   endPreview();
-                  setContextMenu({ app, x: event.clientX });
+                  invoke("show_app_menu", {
+                    path: app.path,
+                    pinned: true,
+                  }).catch(() => setContextMenu({ app, x: event.clientX }));
                 }}
                 onPointerEnter={() => startPreview(app)}
                 onPointerLeave={endPreview}

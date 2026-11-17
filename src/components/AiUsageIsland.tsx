@@ -57,16 +57,16 @@ export function AiUsageIsland({ vertical = false }: { vertical?: boolean }) {
   if (ready.length === 0 || vertical) return null;
 
   return (
-    <div
-      data-no-drag
-      className="relative"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
+    <div data-no-drag className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() =>
+          invoke("open_widget", { id: "ai-limits-dual", width: 320, height: 220 }).catch(() =>
+            setOpen((v) => !v),
+          )
+        }
         aria-label="AI Plan Usage"
+        title="Click to open AI Plan Usage details"
         className="glacier-widget-pill glacier-icon-glow flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
       >
         {ready.map((provider, idx) => {

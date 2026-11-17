@@ -374,12 +374,12 @@ fn snap_dock_edge(app: AppHandle, window: WebviewWindow, x: f64, y: f64) {
 }
 
 #[tauri::command]
-fn open_spotlight(app: AppHandle) {
+async fn open_spotlight(app: AppHandle) {
     let _ = ensure_window(&app, "spotlight", "Glacier Spotlight", 760.0, 480.0);
 }
 
 #[tauri::command]
-fn open_launcher(app: AppHandle) {
+async fn open_launcher(app: AppHandle) {
     let _ = ensure_window(&app, "launcher", "Glacier Launchpad", 880.0, 600.0);
 }
 
@@ -393,7 +393,7 @@ pub fn open_task_manager(app: &AppHandle) -> Option<WebviewWindow> {
 }
 
 #[tauri::command]
-fn task_manager(app: AppHandle) {
+async fn task_manager(app: AppHandle) {
     let _ = open_task_manager(&app);
 }
 
@@ -841,7 +841,7 @@ fn notify(app: AppHandle, title: String, body: String, kind: Option<String>) {
 }
 
 #[tauri::command]
-fn open_settings(app: AppHandle) {
+async fn open_settings(app: AppHandle) {
     // Settings is a normal app window: decorated, resizable, not always-on-top.
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
@@ -866,7 +866,7 @@ fn open_settings(app: AppHandle) {
 /// Widget flyout: a small glass panel anchored by the dock that hosts one
 /// catalog widget by id (`index.html?win=widget-flyout&widget=<id>`).
 #[tauri::command]
-fn open_widget(app: AppHandle, id: String, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
+async fn open_widget(app: AppHandle, id: String, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
     let width = width.unwrap_or(320.0).clamp(180.0, 640.0);
     let height = height.unwrap_or(240.0).clamp(120.0, 640.0);
     let window = ensure_window_query(
@@ -980,6 +980,66 @@ pub fn toggle_spotlight(app: &AppHandle) {
         return;
     }
     let _ = ensure_window(app, "spotlight", "Glacier Spotlight", 760.0, 480.0);
+}
+
+#[tauri::command]
+async fn show_dock_menu(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    let i_launcher = MenuItem::with_id(&app, "dock:launcher", "App Library", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let i_spotlight = MenuItem::with_id(&app, "dock:spotlight", "Spotlight (Alt+Space)", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let i_taskmgr = MenuItem::with_id(&app, "dock:taskmgr", "Activity Monitor", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let sep1 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let i_settings = MenuItem::with_id(&app, "dock:settings", "Glacier Settings", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let i_reset = MenuItem::with_id(&app, "dock:reset", "Restore Default Settings", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let i_taskbar = MenuItem::with_id(&app, "dock:taskbar", "Restore Windows Taskbar", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let sep2 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let i_quit = MenuItem::with_id(&app, "dock:quit", "Quit Glacier Dock", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(
+        &app,
+        &[
+            &i_launcher,
+            &i_spotlight,
+            &i_taskmgr,
+            &sep1,
+            &i_settings,
+            &i_reset,
+            &i_taskbar,
+            &sep2,
+            &i_quit,
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    window.popup_menu(&menu).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn show_app_menu(app: AppHandle, window: WebviewWindow, path: String, pinned: bool) -> Result<(), String> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    let i_open = MenuItem::with_id(&app, format!("app-open:{path}"), "Open", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let i_pin = MenuItem::with_id(
+        &app,
+        format!("app-pin:{path}"),
+        if pinned { "Unpin from Dock" } else { "Pin to Dock" },
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
+    let i_reveal = MenuItem::with_id(&app, format!("app-reveal:{path}"), "Reveal in Explorer", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let sep = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
+    let i_settings = MenuItem::with_id(&app, "dock:settings", "Glacier Settings", true, None::<&str>)
+        .map_err(|e| e.to_string())?;
+    let menu = Menu::with_items(&app, &[&i_open, &i_pin, &i_reveal, &sep, &i_settings])
+        .map_err(|e| e.to_string())?;
+    window.popup_menu(&menu).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1123,8 +1183,62 @@ pub fn run() {
             store_refresh,
             notify,
             open_settings,
-            open_widget
+            open_widget,
+            show_dock_menu,
+            show_app_menu
         ])
+        .on_menu_event(|app, event| {
+            let id = event.id().0.as_str();
+            match id {
+                "dock:launcher" => {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move { open_launcher(handle).await });
+                }
+                "dock:spotlight" => {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move { open_spotlight(handle).await });
+                }
+                "dock:taskmgr" => {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move { task_manager(handle).await });
+                }
+                "dock:settings" => {
+                    let handle = app.clone();
+                    tauri::async_runtime::spawn(async move { open_settings(handle).await });
+                }
+                "dock:reset" => {
+                    let _ = reset_config(app.clone());
+                }
+                "dock:taskbar" => {
+                    restore_native_taskbar();
+                }
+                "dock:quit" => {
+                    quit_app(app.clone());
+                }
+                _ if id.starts_with("app-open:") => {
+                    let path = id.trim_start_matches("app-open:").to_string();
+                    let _ = launch_app(path);
+                }
+                _ if id.starts_with("app-reveal:") => {
+                    let path = id.trim_start_matches("app-reveal:").to_string();
+                    let dir = std::path::Path::new(&path)
+                        .parent()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or(path);
+                    let _ = open_path(dir);
+                }
+                _ if id.starts_with("app-pin:") => {
+                    let path = id.trim_start_matches("app-pin:").to_string();
+                    let mut cfg = config::load(app);
+                    cfg.pinned_apps.retain(|p| p.path != path);
+                    cfg.pins_initialized = true;
+                    config::save(app, &cfg);
+                    use tauri::Emitter;
+                    let _ = app.emit("glacier://pins", cfg.pinned_apps);
+                }
+                _ => {}
+            }
+        })
         .setup(|app| {
             let handle = app.handle().clone();
             let cfg = config::load(&handle);

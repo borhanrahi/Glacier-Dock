@@ -94,7 +94,7 @@ jobs:
           elif [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${INPUT_VERSION}" ]]; then
             VERSION="${INPUT_VERSION#v}"
           else
-            VERSION="0.1.${GITHUB_RUN_NUMBER}"
+            VERSION="0.2.${GITHUB_RUN_NUMBER}"
           fi
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$ ]]; then
             echo "::error::Invalid release version '$VERSION' (expected something like 0.2.0)"
@@ -204,7 +204,7 @@ jobs:
             shasum -a 256 -- * > "$out"
           fi
           cat "$out"
-          gh release upload "$TAG" "$out" --clobber
+          gh release upload "$TAG" "$out" --repo "${{ github.repository }}" --clobber
 
       # Validation runs only (PRs or dispatch with release=false): no release, no tag.
       - name: Build and bundle

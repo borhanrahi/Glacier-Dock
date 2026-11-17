@@ -24,6 +24,8 @@ jobs:
     name: Create Release
     if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       tag_name: ${{ steps.get_version.outputs.tag_name }}
@@ -43,7 +45,7 @@ jobs:
             VER="${INPUT_VERSION#v}"
             TAG="v${VER}"
           else
-            VER="0.2.${GITHUB_RUN_NUMBER}"
+            VER="0.2.$((GITHUB_RUN_NUMBER + 20))"
             TAG="v${VER}"
           fi
           if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$ ]]; then
@@ -81,6 +83,8 @@ jobs:
     needs: create-release
     if: always() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped')
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     concurrency:
       group: ${{ github.workflow }}-${{ github.sha }}-${{ matrix.artifact }}
       cancel-in-progress: true

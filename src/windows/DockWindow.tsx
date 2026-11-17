@@ -254,19 +254,26 @@ export default function DockWindow() {
     return () => unlisten?.();
   }, []);
 
-  // DWM live window preview after a short hover.
-  const startPreview = (app: InstalledApp) => {
+  const anchorX = (el: HTMLElement | null) => {
+    if (!el) return undefined;
+    const rect = el.getBoundingClientRect();
+    return (window.screenX || 0) + rect.left + rect.width / 2;
+  };
+
+  // DWM live window preview after a short hover, anchored above the icon.
+  const startPreview = (app: InstalledApp, el: HTMLElement) => {
+    const x = anchorX(el);
     window.clearTimeout(hoverTimer.current);
     hoverTimer.current = window.setTimeout(() => {
-      invoke("show_preview_for_image", { image: `${app.name}.exe` }).catch(() => {});
-    }, 450);
+      invoke("show_preview_for_image", { image: `${app.name}.exe`, x }).catch(() => {});
+    }, 380);
   };
 
   const endPreview = () => {
     window.clearTimeout(hoverTimer.current);
     hoverTimer.current = window.setTimeout(() => {
       invoke("hide_app_preview").catch(() => {});
-    }, 320);
+    }, 240);
   };
 
   // OS drag-and-drop -> Drop Shelf.
@@ -344,12 +351,12 @@ export default function DockWindow() {
     };
   }, [layout, apps, folders, widgets, showTelemetryRings, showAiUsage, showQuickFolders]);
 
-  // macOS parabolic fisheye wave over app & folder icons only.
+  // macOS parabolic fisheye wave across apps, widgets & utility controls.
   useEffect(() => {
-    const row = rowRef.current;
-    if (!row || !layout) return;
+    const pill = pillRef.current;
+    if (!pill || !layout) return;
     if (magnification <= 1.01) {
-      for (const icon of Array.from(row.querySelectorAll<HTMLElement>("[data-icon]"))) {
+      for (const icon of Array.from(pill.querySelectorAll<HTMLElement>("[data-icon]"))) {
         icon.style.setProperty("--icon-scale", "1");
         icon.style.setProperty("--icon-lift", "0px");
         icon.style.setProperty("--icon-spread", "0px");
@@ -358,31 +365,39 @@ export default function DockWindow() {
     }
     const vertical = layout.edge === "left" || layout.edge === "right";
     return attachFisheye(
-      row,
-      () => Array.from(row.querySelectorAll<HTMLElement>("[data-icon]")),
+      pill,
+      () => Array.from(pill.querySelectorAll<HTMLElement>("[data-icon]")),
       {
-        maxScale: Math.min(1.48, Math.max(1.15, magnification)),
+        maxScale: Math.min(1.42, Math.max(1.15, magnification)),
         radius: 165,
         orientation: vertical ? "vertical" : "horizontal",
-        displacement: 10,
+        displacement: 9,
         spread: 16,
       },
     );
-  }, [layout, apps, transientApps, folders, magnification]);
+  }, [layout, apps, transientApps, folders, widgets, magnification]);
 
-  const openCommand = useCallback((cmd: string, args?: Record<string, unknown>) => {
-    invoke(cmd, args).catch((error) => {
-      setIsland({
-        id: `cmd-${Date.now()}`,
-        app: "Glacier Dock",
-        title: `Action failed (${cmd})`,
-        body: error instanceof Error ? error.message : String(error),
-        kind: "message",
+  const openCommand = useCallback(
+    (cmd: string, args?: Record<string, unknown>, el?: HTMLElement | null) => {
+      window.clearTimeout(hoverTimer.current);
+      invoke("hide_app_preview").catch(() => {});
+      const payload = el ? { ...args, x: anchorX(el) } : args;
+      invoke(cmd, payload).catch((error) => {
+        setIsland({
+          id: `cmd-${Date.now()}`,
+          app: "Glacier Dock",
+          title: `Action failed (${cmd})`,
+          body: error instanceof Error ? error.message : String(error),
+          kind: "message",
+        });
       });
-    });
-  }, []);
+    },
+    [],
+  );
 
   const launch = useCallback(async (app: InstalledApp) => {
+    window.clearTimeout(hoverTimer.current);
+    invoke("hide_app_preview").catch(() => {});
     setBouncingApp(app.path);
     window.clearTimeout(bounceTimer.current);
     bounceTimer.current = window.setTimeout(() => setBouncingApp(null), 440);
@@ -535,7 +550,7 @@ export default function DockWindow() {
                     pinned: true,
                   }).catch(() => setContextMenu({ app, x: event.clientX }));
                 }}
-                onPointerEnter={() => startPreview(app)}
+                onPointerEnter={(event) => startPreview(app, event.currentTarget)}
                 onPointerLeave={endPreview}
                 aria-label={app.name}
                 className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px] will-change-transform active:scale-90"
@@ -609,22 +624,32 @@ export default function DockWindow() {
             return (
               <button
                 key={id}
+                data-icon
                 data-no-drag
                 type="button"
                 aria-label={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
-                onClick={() =>
-                  openCommand("open_widget", {
-                    id,
-                    width: meta.width,
-                    height: meta.height,
-                  })
+                onClick={(event) =>
+                  openCommand(
+                    "open_widget",
+                    {
+                      id,
+                      width: meta.width,
+                      height: meta.height,
+                    },
+                    event.currentTarget,
+                  )
                 }
-                className={`group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center gap-1.5 transition-transform duration-150 active:scale-95 ${
+                className={`group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center gap-1.5 will-change-transform active:scale-95 ${
                   vertical ? "" : "px-2.5"
                 }`}
                 style={{
                   height: "calc(var(--glacier-icon-base) * 0.9)",
                   minWidth: "calc(var(--glacier-icon-base) * 0.9)",
+                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
+                  transform:
+                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+                  transformOrigin: vertical ? "center left" : "center bottom",
                 }}
               >
                 {!vertical && <span className="glacier-dock-tip">{meta.name}</span>}
@@ -643,14 +668,20 @@ export default function DockWindow() {
           {showQuickFolders && (
             <>
               <button
+                data-icon
                 data-no-drag
                 type="button"
                 aria-label="Downloads"
                 onClick={() => invoke("open_path", { path: "shell:Downloads" }).catch(() => {})}
-                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
                 style={{
                   width: "calc(var(--glacier-icon-base) * 0.92)",
                   height: "calc(var(--glacier-icon-base) * 0.92)",
+                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
+                  transform:
+                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+                  transformOrigin: vertical ? "center left" : "center bottom",
                 }}
               >
                 {!vertical && <span className="glacier-dock-tip">Downloads</span>}
@@ -658,16 +689,22 @@ export default function DockWindow() {
               </button>
 
               <button
+                data-icon
                 data-no-drag
                 type="button"
                 aria-label="Recycle Bin"
                 onClick={() =>
                   invoke("open_path", { path: "shell:RecycleBinFolder" }).catch(() => {})
                 }
-                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
                 style={{
                   width: "calc(var(--glacier-icon-base) * 0.92)",
                   height: "calc(var(--glacier-icon-base) * 0.92)",
+                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
+                  transform:
+                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+                  transformOrigin: vertical ? "center left" : "center bottom",
                 }}
               >
                 {!vertical && <span className="glacier-dock-tip">Recycle Bin</span>}
@@ -677,14 +714,20 @@ export default function DockWindow() {
           )}
 
           <button
+            data-icon
             data-no-drag
             type="button"
             aria-label="App Library"
             onClick={() => openCommand("open_launcher")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
+              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">App Library</span>}
@@ -692,14 +735,20 @@ export default function DockWindow() {
           </button>
 
           <button
+            data-icon
             data-no-drag
             type="button"
             aria-label="Glacier Activity Monitor"
             onClick={() => openCommand("task_manager")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
+              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">Activity Monitor</span>}
@@ -707,14 +756,20 @@ export default function DockWindow() {
           </button>
 
           <button
+            data-icon
             data-no-drag
             type="button"
             aria-label="Glacier Settings"
             onClick={() => openCommand("open_settings")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
+              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">Settings</span>}
@@ -722,14 +777,20 @@ export default function DockWindow() {
           </button>
 
           <button
+            data-icon
             data-no-drag
             type="button"
             aria-label="Spotlight (Alt + Space)"
             onClick={() => openCommand("open_spotlight")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
               height: "calc(var(--glacier-icon-base) * 0.92)",
+              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
+              transform:
+                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+              transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
             {!vertical && <span className="glacier-dock-tip">Spotlight (Alt + Space)</span>}
@@ -777,12 +838,16 @@ export default function DockWindow() {
               <button
                 type="button"
                 aria-label="Hidden & Background Apps"
-                onClick={() =>
-                  openCommand("open_widget", {
-                    id: "background-apps",
-                    width: 340,
-                    height: 380,
-                  })
+                onClick={(event) =>
+                  openCommand(
+                    "open_widget",
+                    {
+                      id: "background-apps",
+                      width: 340,
+                      height: 380,
+                    },
+                    event.currentTarget,
+                  )
                 }
                 className="group glacier-widget-pill glacier-icon-glow relative grid size-8 shrink-0 place-items-center transition-transform duration-150 active:scale-90"
               >

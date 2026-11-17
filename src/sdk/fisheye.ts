@@ -58,9 +58,11 @@ export function attachFisheye(
     for (const icon of icons) {
       let targetScale = 1;
       let targetLift = 0;
+      const rect = icon.getBoundingClientRect();
+      const baseSpan = horizontal ? rect.width : rect.height;
+      const dynamicSpread = Math.max(spreadFactor, baseSpan * 0.48);
 
       if (pointer !== null) {
-        const rect = icon.getBoundingClientRect();
         const center = horizontal ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
         const distance = Math.abs(pointer - center);
         if (distance < opts.radius) {
@@ -82,7 +84,7 @@ export function attachFisheye(
         icon.style.setProperty("--icon-lift", `${nextLift.toFixed(2)}px`);
         icon.style.setProperty(
           "--icon-spread",
-          `${((nextScale - 1) * spreadFactor).toFixed(2)}px`,
+          `${((nextScale - 1) * dynamicSpread).toFixed(2)}px`,
         );
       } else {
         states.set(icon, { scale: targetScale, lift: targetLift });
@@ -90,7 +92,7 @@ export function attachFisheye(
         icon.style.setProperty("--icon-lift", `${targetLift.toFixed(2)}px`);
         icon.style.setProperty(
           "--icon-spread",
-          `${((targetScale - 1) * spreadFactor).toFixed(2)}px`,
+          `${((targetScale - 1) * dynamicSpread).toFixed(2)}px`,
         );
       }
     }

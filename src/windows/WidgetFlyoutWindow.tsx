@@ -28,7 +28,16 @@ export default function WidgetFlyoutWindow() {
     })
       .then((fn) => (unlisten = fn))
       .catch(() => {});
-    return () => unlisten?.();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        invoke("hide_window").catch(() => {});
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      unlisten?.();
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, []);
 
   const meta = widgetMeta(id);
@@ -43,7 +52,7 @@ export default function WidgetFlyoutWindow() {
   }
 
   return (
-    <div className="glacier-modal-enter relative h-full w-full">
+    <div key={id} className="glacier-modal-enter relative h-full w-full will-change-transform">
       <Suspense
         fallback={
           <div className="grid h-full place-items-center text-[11px] text-[var(--glacier-text-muted)]">

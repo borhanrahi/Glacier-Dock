@@ -443,11 +443,13 @@ fn snap_dock_edge(app: AppHandle, window: WebviewWindow, x: f64, y: f64) {
 
 #[tauri::command]
 async fn open_spotlight(app: AppHandle) {
+    hide_app_preview(app.clone());
     let _ = ensure_window(&app, "spotlight", "Glacier Spotlight", 760.0, 480.0);
 }
 
 #[tauri::command]
 async fn open_launcher(app: AppHandle) {
+    hide_app_preview(app.clone());
     let _ = ensure_window(&app, "launcher", "Glacier Launchpad", 880.0, 600.0);
 }
 
@@ -457,6 +459,7 @@ fn hide_window(window: WebviewWindow) {
 }
 
 pub fn open_task_manager(app: &AppHandle) -> Option<WebviewWindow> {
+    hide_app_preview(app.clone());
     ensure_window(app, "task-manager", "Glacier Activity Monitor", 900.0, 600.0)
 }
 
@@ -610,8 +613,35 @@ fn preview_windows(pid: u32) -> serde_json::Value {
 }
 
 /// Show a live DWM thumbnail of the first visible window owned by `pid`.
+fn position_above_dock(window: &WebviewWindow, width: f64, height: f64, anchor_x: Option<f64>) {
+    #[cfg(windows)]
+    {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let pw = (width * scale).round() as i32;
+        let ph = (height * scale).round() as i32;
+        let monitors = win32::monitors::cached_monitors();
+        let center_x = anchor_x.map(|x| (x * scale).round() as i32);
+        let monitor = center_x
+            .and_then(|cx| win32::monitors::monitor_for_point(cx, 100))
+            .or_else(|| monitors.iter().find(|m| m.primary).cloned())
+            .or_else(|| monitors.first().cloned());
+        if let Some(m) = monitor {
+            let desired_x = center_x.map(|cx| cx - pw / 2).unwrap_or(m.x + (m.width - pw) / 2);
+            let min_x = m.x + 12;
+            let max_x = (m.x + m.width - pw - 12).max(min_x);
+            let x = desired_x.clamp(min_x, max_x);
+            let y = (m.y + m.height - ph - (90.0 * scale).round() as i32).max(m.y + 12);
+            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (window, width, height, anchor_x);
+    }
+}
+
 #[tauri::command]
-async fn show_app_preview(app: AppHandle, pid: u32) {
+async fn show_app_preview(app: AppHandle, pid: u32, x: Option<f64>) {
     #[cfg(windows)]
     {
         let windows = tauri::async_runtime::spawn_blocking(move || {
@@ -626,6 +656,7 @@ async fn show_app_preview(app: AppHandle, pid: u32) {
         let Some(window) = ensure_window(&app, "preview", "Preview", 280.0, 180.0) else {
             return;
         };
+        position_above_dock(&window, 280.0, 180.0, x);
         let Ok(preview_hwnd) = window.hwnd() else {
             return;
         };
@@ -638,13 +669,13 @@ async fn show_app_preview(app: AppHandle, pid: u32) {
     }
     #[cfg(not(windows))]
     {
-        let _ = (app, pid);
+        let _ = (app, pid, x);
     }
 }
 
 /// Hover preview: find the process by image name and thumbnail its window.
 #[tauri::command]
-async fn show_preview_for_image(app: AppHandle, image: String) {
+async fn show_preview_for_image(app: AppHandle, image: String, x: Option<f64>) {
     #[cfg(windows)]
     {
         let pid = tauri::async_runtime::spawn_blocking(move || {
@@ -659,12 +690,12 @@ async fn show_preview_for_image(app: AppHandle, image: String) {
         .ok()
         .flatten();
         if let Some(pid) = pid {
-            show_app_preview(app, pid).await;
+            show_app_preview(app, pid, x).await;
         }
     }
     #[cfg(not(windows))]
     {
-        let _ = (app, image);
+        let _ = (app, image, x);
     }
 }
 
@@ -919,6 +950,7 @@ fn notify(app: AppHandle, title: String, body: String, kind: Option<String>) {
 
 #[tauri::command]
 async fn open_settings(app: AppHandle) {
+    hide_app_preview(app.clone());
     // Settings is a normal app window: decorated, resizable, not always-on-top.
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.show();
@@ -947,7 +979,14 @@ async fn open_settings(app: AppHandle) {
 /// Widget flyout: a small glass panel anchored by the dock that hosts one
 /// catalog widget by id (`index.html?win=widget-flyout&widget=<id>`).
 #[tauri::command]
-async fn open_widget(app: AppHandle, id: String, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
+async fn open_widget(
+    app: AppHandle,
+    id: String,
+    width: Option<f64>,
+    height: Option<f64>,
+    x: Option<f64>,
+) -> Result<(), String> {
+    hide_app_preview(app.clone());
     let width = width.unwrap_or(320.0).clamp(180.0, 640.0);
     let height = height.unwrap_or(240.0).clamp(120.0, 640.0);
     let window = ensure_window_query(
@@ -959,24 +998,8 @@ async fn open_widget(app: AppHandle, id: String, width: Option<f64>, height: Opt
         &format!("&widget={}", url_encode(&id)),
     )
     .ok_or_else(|| "could not open the widget flyout".to_string())?;
-    // Position before showing so a reused flyout never flashes at the old spot.
-    let _ = window.hide();
     let _ = window.set_size(tauri::LogicalSize::new(width, height));
-
-    // Anchor just above the bottom edge of the primary display, near the dock.
-    #[cfg(windows)]
-    {
-        let monitors = win32::monitors::cached_monitors();
-        let monitor = monitors
-            .iter()
-            .find(|monitor| monitor.primary)
-            .or_else(|| monitors.first());
-        if let Some(monitor) = monitor {
-            let x = monitor.x + (monitor.width - width as i32) / 2;
-            let y = monitor.y + monitor.height - height as i32 - 84;
-            let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
-        }
-    }
+    position_above_dock(&window, width, height, x);
 
     {
         use tauri::Emitter;

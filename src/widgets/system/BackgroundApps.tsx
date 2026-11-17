@@ -19,6 +19,35 @@ function ProcIcon({ path }: { path: string | null }) {
   return <span className="size-5 shrink-0 rounded bg-white/10" />;
 }
 
+const SYSTEM_NOISE = new Set([
+  "svchost.exe",
+  "conhost.exe",
+  "dllhost.exe",
+  "sihost.exe",
+  "ctfmon.exe",
+  "fontdrvhost.exe",
+  "dwm.exe",
+  "csrss.exe",
+  "wininit.exe",
+  "lsass.exe",
+  "services.exe",
+  "smss.exe",
+  "taskhostw.exe",
+  "searchhost.exe",
+  "shellexperiencehost.exe",
+  "runtimebroker.exe",
+  "backgroundtaskhost.exe",
+  "wudfhost.exe",
+  "audiodg.exe",
+  "smartscreen.exe",
+  "winlogon.exe",
+  "spoolsv.exe",
+  "dashost.exe",
+  "registry",
+  "system",
+  "system idle process",
+]);
+
 export default function BackgroundApps() {
   const [procs, setProcs] = useState<ProcEntry[]>([]);
 
@@ -29,6 +58,8 @@ export default function BackgroundApps() {
         const unique = new Map<string, ProcEntry>();
         for (const p of snap.processes) {
           if (!p.exePath) continue;
+          const lowerName = p.name.toLowerCase();
+          if (SYSTEM_NOISE.has(lowerName)) continue;
           const key = p.exePath.toLowerCase();
           if (!unique.has(key)) unique.set(key, p);
         }

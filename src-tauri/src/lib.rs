@@ -653,7 +653,7 @@ async fn show_app_preview(app: AppHandle, pid: u32, x: Option<f64>) {
             hide_app_preview(app);
             return;
         };
-        let Some(window) = ensure_window(&app, "preview", "Preview", 280.0, 180.0) else {
+        let Some(window) = ensure_window_hidden(&app, "preview", "Preview", 280.0, 180.0, "", false) else {
             return;
         };
         position_above_dock(&window, 280.0, 180.0, x);
@@ -665,6 +665,9 @@ async fn show_app_preview(app: AppHandle, pid: u32, x: Option<f64>) {
         {
             eprintln!("glacier: preview failed: {err}");
             let _ = window.hide();
+        } else {
+            let _ = window.show();
+            emit_window_show(&app, "preview");
         }
     }
     #[cfg(not(windows))]
@@ -953,6 +956,7 @@ async fn open_settings(app: AppHandle) {
     hide_app_preview(app.clone());
     // Settings is a normal app window: decorated, resizable, not always-on-top.
     if let Some(window) = app.get_webview_window("settings") {
+        emit_window_show(&app, "settings");
         let _ = window.show();
         let _ = window.set_focus();
         return;
@@ -971,6 +975,7 @@ async fn open_settings(app: AppHandle) {
     .center()
     .build()
     {
+        emit_window_show(&app, "settings");
         let _ = window.show();
         let _ = window.set_focus();
     }
@@ -989,13 +994,14 @@ async fn open_widget(
     hide_app_preview(app.clone());
     let width = width.unwrap_or(320.0).clamp(180.0, 640.0);
     let height = height.unwrap_or(240.0).clamp(120.0, 640.0);
-    let window = ensure_window_query(
+    let window = ensure_window_hidden(
         &app,
         "widget-flyout",
         "Glacier Widget",
         width,
         height,
         &format!("&widget={}", url_encode(&id)),
+        true,
     )
     .ok_or_else(|| "could not open the widget flyout".to_string())?;
     let _ = window.set_size(tauri::LogicalSize::new(width, height));
@@ -1005,6 +1011,7 @@ async fn open_widget(
         use tauri::Emitter;
         let _ = app.emit("glacier://widget-flyout", serde_json::json!({ "id": id }));
     }
+    emit_window_show(&app, "widget-flyout");
     let _ = window.show();
     let _ = window.set_focus();
     Ok(())
@@ -1023,32 +1030,27 @@ fn url_encode(value: &str) -> String {
         .collect()
 }
 
-/// Create (or re-show) a utility window: spotlight, launcher, flyout.
-fn ensure_window(
-    app: &AppHandle,
-    label: &str,
-    title: &str,
-    width: f64,
-    height: f64,
-) -> Option<WebviewWindow> {
-    ensure_window_query(app, label, title, width, height, "")
+fn emit_window_show(app: &AppHandle, label: &str) {
+    use tauri::Emitter;
+    let _ = app.emit_to(label, "glacier://window-show", ());
 }
 
-fn ensure_window_query(
+/// Create (or fetch) a utility window hidden so callers can size/position it
+/// before showing without a screen-center flash.
+fn ensure_window_hidden(
     app: &AppHandle,
     label: &str,
     title: &str,
     width: f64,
     height: f64,
     query: &str,
+    focused: bool,
 ) -> Option<WebviewWindow> {
     if let Some(window) = app.get_webview_window(label) {
-        let _ = window.show();
-        let _ = window.set_focus();
         return Some(window);
     }
 
-    let window = WebviewWindowBuilder::new(
+    WebviewWindowBuilder::new(
         app,
         label,
         WebviewUrl::App(std::path::PathBuf::from(format!(
@@ -1062,11 +1064,23 @@ fn ensure_window_query(
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
+    .focused(focused)
     .visible(false)
     .build()
-    .ok()?;
+    .ok()
+}
 
+/// Create (or re-show) a centered utility window: spotlight, launcher, monitor.
+fn ensure_window(
+    app: &AppHandle,
+    label: &str,
+    title: &str,
+    width: f64,
+    height: f64,
+) -> Option<WebviewWindow> {
+    let window = ensure_window_hidden(app, label, title, width, height, "", true)?;
     let _ = window.center();
+    emit_window_show(app, label);
     let _ = window.show();
     let _ = window.set_focus();
     Some(window)
@@ -1081,6 +1095,8 @@ pub fn toggle_spotlight(app: &AppHandle) {
                 let _ = window.hide();
                 return;
             }
+            let _ = window.center();
+            emit_window_show(&handle, "spotlight");
             let _ = window.show();
             let _ = window.set_focus();
             return;
@@ -1370,6 +1386,34 @@ pub fn run() {
                 win32::automations::spawn(handle.clone());
                 win32::systray::install(&handle);
                 win32::telemetry::spawn(handle.clone());
+
+                // Pre-warm frequently summoned popups off-screen so opening a widget
+                // or Spotlight reacts with zero cold WebView2 initialization lag.
+                let warm_handle = handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1400));
+                    let warm_inner = warm_handle.clone();
+                    let _ = warm_handle.run_on_main_thread(move || {
+                        let _ = ensure_window_hidden(
+                            &warm_inner,
+                            "widget-flyout",
+                            "Glacier Widget",
+                            320.0,
+                            240.0,
+                            "",
+                            false,
+                        );
+                        let _ = ensure_window_hidden(
+                            &warm_inner,
+                            "spotlight",
+                            "Glacier Spotlight",
+                            760.0,
+                            480.0,
+                            "",
+                            false,
+                        );
+                    });
+                });
             }
 
             // Non-Windows builds (CI, future ports) still need a window. On

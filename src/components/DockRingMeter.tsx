@@ -3,12 +3,19 @@
  * (CPU, RAM, GPU, Battery) using Glacier's Aurora & threshold palette.
  */
 
+import type { MotionValue } from "motion/react";
+
+import { MotionDockItem } from "./MotionDockItem";
+
 export interface DockRingMeterProps {
   label: string;
   value: number;
   tooltip: string;
   vertical?: boolean;
   charging?: boolean;
+  mouseAxis: MotionValue<number>;
+  baseSize: number;
+  maxScale: number;
   onClick?: () => void;
 }
 
@@ -29,6 +36,9 @@ export function DockRingMeter({
   tooltip,
   vertical = false,
   charging = false,
+  mouseAxis,
+  baseSize,
+  maxScale,
   onClick,
 }: DockRingMeterProps) {
   const clamped = Math.min(100, Math.max(0, Number.isFinite(value) ? value : 0));
@@ -38,19 +48,19 @@ export function DockRingMeter({
   const stroke = ringStrokeColor(label, clamped, charging);
 
   return (
-    <button
-      data-no-drag
-      type="button"
-      aria-label={tooltip}
+    <MotionDockItem
+      mouseAxis={mouseAxis}
+      baseSize={Math.round(baseSize * 0.94)}
+      maxScale={maxScale}
+      vertical={vertical}
+      lift={6}
+      tip={tooltip}
+      ariaLabel={tooltip}
+      noDrag
       onClick={onClick}
-      className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-95"
-      style={{
-        width: "calc(var(--glacier-icon-base) * 0.94)",
-        height: "calc(var(--glacier-icon-base) * 0.94)",
-      }}
+      className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
     >
-      {!vertical && <span className="glacier-dock-tip">{tooltip}</span>}
-      <svg viewBox="0 0 36 36" className="size-[34px] -rotate-90" aria-hidden>
+      <svg viewBox="0 0 36 36" className="size-[82%] -rotate-90" aria-hidden>
         <circle
           cx="18"
           cy="18"
@@ -80,6 +90,6 @@ export function DockRingMeter({
           {Math.round(clamped)}
         </span>
       </span>
-    </button>
+    </MotionDockItem>
   );
 }

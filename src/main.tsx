@@ -6,6 +6,7 @@ import {
   type LazyExoticComponent,
 } from "react";
 import { createRoot } from "react-dom/client";
+import { MotionConfig } from "motion/react";
 import "./styles/glacier-tokens.css";
 
 /**
@@ -50,9 +51,11 @@ const WindowRoot = resolveWindow(label);
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    <Suspense fallback={null}>
-      {WindowRoot ? <WindowRoot /> : <UnknownWindow label={label} />}
-    </Suspense>
+    <MotionConfig reducedMotion="user">
+      <Suspense fallback={null}>
+        {WindowRoot ? <WindowRoot /> : <UnknownWindow label={label} />}
+      </Suspense>
+    </MotionConfig>
   </StrictMode>,
 );
 

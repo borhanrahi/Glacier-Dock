@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { AnimatePresence, motion } from "motion/react";
 
+import { MAC_MODAL_SPRING, MAC_TAB_SPRING, useWindowMotion } from "../sdk/motion";
 import { appHue, initials } from "../utils/apps";
 
 interface ProcessRow {
@@ -83,6 +85,7 @@ export default function TaskManagerWindow() {
   const [history, setHistory] = useState<{ cpu: number[]; ram: number[] }>({ cpu: [], ram: [] });
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  const { showSeq, visible, dismiss } = useWindowMotion();
 
   const refresh = useCallback(async () => {
     try {
@@ -176,49 +179,69 @@ export default function TaskManagerWindow() {
     snapshot.totalRam > 0 ? (snapshot.usedRam / snapshot.totalRam) * 100 : 0;
 
   return (
-    <div className="glacier-dock-glass glacier-modal-enter relative flex h-full w-full flex-col overflow-hidden rounded-[18px]">
-      <span className="glacier-dock-sheen" aria-hidden />
-      <header data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
-        <span className="text-xs font-semibold tracking-wide">Glacier Activity Monitor</span>
-        <nav className="ml-3 flex gap-1">
-          {TABS.map((entry) => (
-            <button
-              key={entry}
-              type="button"
-              onClick={() => setTab(entry)}
-              className="rounded-full px-2.5 py-1 text-[10px] transition-colors"
-              style={{
-                background: entry === tab ? "var(--glacier-aurora-line)" : "rgba(255,255,255,0.08)",
-                color: entry === tab ? "#08111d" : "inherit",
-                fontWeight: entry === tab ? 600 : 400,
-              }}
-            >
-              {entry}
-            </button>
-          ))}
-        </nav>
-        <span className="ml-auto text-[9px] tabular-nums opacity-50">
-          {snapshot.processes.length} processes
-        </span>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            title="Minimize"
-            onClick={() => getCurrentWindow().minimize().catch(() => {})}
-            className="grid size-6 place-items-center rounded-md bg-white/10 text-xs hover:bg-white/20"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            title="Close"
-            onClick={() => invoke("hide_window").catch(() => {})}
-            className="grid size-6 place-items-center rounded-md bg-white/10 text-xs hover:bg-red-500/35"
-          >
-            ×
-          </button>
-        </div>
-      </header>
+    <AnimatePresence mode="wait">
+      {visible && (
+        <motion.div
+          key={showSeq}
+          initial={{ opacity: 0, y: 12, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.11 } }}
+          transition={MAC_MODAL_SPRING}
+          className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px] will-change-transform"
+        >
+          <span className="glacier-dock-sheen" aria-hidden />
+          <header data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
+            <span className="text-xs font-semibold tracking-wide">Glacier Activity Monitor</span>
+            <nav className="ml-3 flex gap-1">
+              {TABS.map((entry) => {
+                const active = entry === tab;
+                return (
+                  <button
+                    key={entry}
+                    type="button"
+                    onClick={() => setTab(entry)}
+                    className="relative rounded-full px-2.5 py-1 text-[10px] transition-colors"
+                    style={{
+                      background: active ? "transparent" : "rgba(255,255,255,0.08)",
+                      color: active ? "#08111d" : "inherit",
+                      fontWeight: active ? 600 : 400,
+                    }}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="activity-tab-pill"
+                        transition={MAC_TAB_SPRING}
+                        className="absolute inset-0 rounded-full"
+                        style={{ background: "var(--glacier-aurora-line)" }}
+                      />
+                    )}
+                    <span className="relative z-10">{entry}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <span className="ml-auto text-[9px] tabular-nums opacity-50">
+              {snapshot.processes.length} processes
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                title="Minimize"
+                onClick={() => getCurrentWindow().minimize().catch(() => {})}
+                className="grid size-6 place-items-center rounded-md bg-white/10 text-xs hover:bg-white/20"
+              >
+                −
+              </button>
+              <button
+                type="button"
+                title="Close"
+                onClick={dismiss}
+                className="grid size-6 place-items-center rounded-md bg-white/10 text-xs hover:bg-red-500/35"
+              >
+                ×
+              </button>
+            </div>
+          </header>
 
       <div className="grid grid-cols-2 gap-3 px-4 py-2">
         <div>
@@ -447,6 +470,8 @@ export default function TaskManagerWindow() {
           End process tree
         </button>
       </footer>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

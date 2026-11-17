@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useMotionValue } from "motion/react";
 
 import { AiUsageIsland } from "../components/AiUsageIsland";
 import { AppFolderTile } from "../components/AppFolderTile";
@@ -17,7 +18,7 @@ import {
 import { DockRingMeter } from "../components/DockRingMeter";
 import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
 import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
-import { attachFisheye } from "../sdk/fisheye";
+import { MotionDockItem } from "../components/MotionDockItem";
 import { useAppIcon, useTelemetry } from "../sdk/hooks";
 import {
   applyAccent,
@@ -142,6 +143,7 @@ export default function DockWindow() {
   const telemetry = useTelemetry();
   const hoverTimer = useRef<number | undefined>(undefined);
   const bounceTimer = useRef<number | undefined>(undefined);
+  const mouseAxis = useMotionValue(Number.POSITIVE_INFINITY);
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 1000);
@@ -328,12 +330,24 @@ export default function DockWindow() {
     return () => unlisten?.();
   }, [layout]);
 
-  // Report the pill rect: WM_NCHITTEST headroom + DXGI capture region.
+  // Report the pill rect (throttled): WM_NCHITTEST headroom + DXGI capture region.
   useEffect(() => {
     const pill = pillRef.current;
     if (!pill) return;
-    const report = () => {
+    let pending: number | undefined;
+    let last = { x: -1, y: -1, w: -1, h: -1 };
+    const reportNow = () => {
+      pending = undefined;
       const rect = pill.getBoundingClientRect();
+      if (
+        Math.abs(rect.x - last.x) < 2 &&
+        Math.abs(rect.y - last.y) < 2 &&
+        Math.abs(rect.width - last.w) < 2 &&
+        Math.abs(rect.height - last.h) < 2
+      ) {
+        return;
+      }
+      last = { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
       invoke("set_pill_rect", {
         x: rect.x,
         y: rect.y,
@@ -341,41 +355,20 @@ export default function DockWindow() {
         height: rect.height,
       }).catch(() => {});
     };
-    report();
-    const observer = new ResizeObserver(report);
+    const schedule = () => {
+      if (pending !== undefined) return;
+      pending = window.setTimeout(reportNow, 64);
+    };
+    reportNow();
+    const observer = new ResizeObserver(schedule);
     observer.observe(pill);
-    window.addEventListener("resize", report);
+    window.addEventListener("resize", schedule);
     return () => {
+      if (pending !== undefined) window.clearTimeout(pending);
       observer.disconnect();
-      window.removeEventListener("resize", report);
+      window.removeEventListener("resize", schedule);
     };
   }, [layout, apps, folders, widgets, showTelemetryRings, showAiUsage, showQuickFolders]);
-
-  // macOS parabolic fisheye wave across apps, widgets & utility controls.
-  useEffect(() => {
-    const pill = pillRef.current;
-    if (!pill || !layout) return;
-    if (magnification <= 1.01) {
-      for (const icon of Array.from(pill.querySelectorAll<HTMLElement>("[data-icon]"))) {
-        icon.style.setProperty("--icon-scale", "1");
-        icon.style.setProperty("--icon-lift", "0px");
-        icon.style.setProperty("--icon-spread", "0px");
-      }
-      return;
-    }
-    const vertical = layout.edge === "left" || layout.edge === "right";
-    return attachFisheye(
-      pill,
-      () => Array.from(pill.querySelectorAll<HTMLElement>("[data-icon]")),
-      {
-        maxScale: Math.min(1.42, Math.max(1.15, magnification)),
-        radius: 165,
-        orientation: vertical ? "vertical" : "horizontal",
-        displacement: 9,
-        spread: 16,
-      },
-    );
-  }, [layout, apps, transientApps, folders, widgets, magnification]);
 
   const openCommand = useCallback(
     (cmd: string, args?: Record<string, unknown>, el?: HTMLElement | null) => {
@@ -459,6 +452,9 @@ export default function DockWindow() {
     const extra = transientApps.filter((a) => !pinnedLower.has(a.path.toLowerCase()));
     return [...apps, ...extra];
   }, [apps, transientApps]);
+  const baseIconSize = layout?.iconSize ?? 42;
+  const utilSize = Math.round(baseIconSize * 0.9);
+  const maxMag = magnification;
   const dividerClass = vertical
     ? "my-1 h-px w-6 shrink-0 bg-white/[0.12]"
     : "mx-1 h-6 w-px shrink-0 self-center bg-white/[0.12]";
@@ -502,6 +498,8 @@ export default function DockWindow() {
 
       <div
         ref={pillRef}
+        onPointerMove={(event) => mouseAxis.set(vertical ? event.pageY : event.pageX)}
+        onPointerLeave={() => mouseAxis.set(Number.POSITIVE_INFINITY)}
         onPointerDown={onPillPointerDown}
         onContextMenu={(event) => {
           const target = event.target as HTMLElement;
@@ -536,11 +534,17 @@ export default function DockWindow() {
             const plateClass =
               iconPlate && iconPlate !== "none" ? `glacier-plate-${iconPlate}` : "";
             return (
-              <button
+              <MotionDockItem
                 key={app.path}
-                data-icon
-                data-app-icon
-                type="button"
+                mouseAxis={mouseAxis}
+                baseSize={baseIconSize}
+                maxScale={maxMag}
+                vertical={vertical}
+                lift={9}
+                tip={app.name}
+                ariaLabel={app.name}
+                bouncing={isBouncing}
+                appIcon
                 onClick={() => launch(app)}
                 onContextMenu={(event) => {
                   event.preventDefault();
@@ -552,24 +556,9 @@ export default function DockWindow() {
                 }}
                 onPointerEnter={(event) => startPreview(app, event.currentTarget)}
                 onPointerLeave={endPreview}
-                aria-label={app.name}
-                className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px] will-change-transform active:scale-90"
-                style={{
-                  width: "var(--glacier-icon-base)",
-                  height: "var(--glacier-icon-base)",
-                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-                  transform:
-                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-                  transformOrigin: vertical ? "center left" : "center bottom",
-                }}
+                className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px] will-change-transform"
               >
-                {!vertical && <span className="glacier-dock-tip">{app.name}</span>}
-                <span
-                  className={`grid size-full place-items-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${plateClass} ${
-                    isBouncing ? "glacier-launch-bounce" : ""
-                  }`}
-                >
+                <span className={`grid size-full place-items-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${plateClass}`}>
                   <AppIcon app={app} />
                 </span>
                 {isRunning && (
@@ -581,39 +570,41 @@ export default function DockWindow() {
                     }}
                   />
                 )}
-              </button>
+              </MotionDockItem>
             );
           })}
 
           {folders.map((folder) => (
-            <div key={folder.id} data-icon className="glacier-icon-glow relative">
-              <AppFolderTile
-                name={folder.name}
-                color={folder.color}
-                apps={folder.apps}
-                vertical={vertical}
-                onLaunch={launch}
-                onRename={(name) =>
-                  setFolders((current) =>
-                    current.map((item) => (item.id === folder.id ? { ...item, name } : item)),
-                  )
-                }
-                onColor={(color) =>
-                  setFolders((current) =>
-                    current.map((item) => (item.id === folder.id ? { ...item, color } : item)),
-                  )
-                }
-                onRemoveApp={(path) =>
-                  setFolders((current) =>
-                    current.map((item) =>
-                      item.id === folder.id
-                        ? { ...item, apps: item.apps.filter((app) => app.path !== path) }
-                        : item,
-                    ),
-                  )
-                }
-              />
-            </div>
+            <AppFolderTile
+              key={folder.id}
+              name={folder.name}
+              color={folder.color}
+              apps={folder.apps}
+              mouseAxis={mouseAxis}
+              baseSize={baseIconSize}
+              maxScale={maxMag}
+              vertical={vertical}
+              onLaunch={launch}
+              onRename={(name) =>
+                setFolders((current) =>
+                  current.map((item) => (item.id === folder.id ? { ...item, name } : item)),
+                )
+              }
+              onColor={(color) =>
+                setFolders((current) =>
+                  current.map((item) => (item.id === folder.id ? { ...item, color } : item)),
+                )
+              }
+              onRemoveApp={(path) =>
+                setFolders((current) =>
+                  current.map((item) =>
+                    item.id === folder.id
+                      ? { ...item, apps: item.apps.filter((app) => app.path !== path) }
+                      : item,
+                  ),
+                )
+              }
+            />
           ))}
 
           {(pinned.length > 0 || folders.length > 0) && <span className={dividerClass} aria-hidden />}
@@ -622,12 +613,17 @@ export default function DockWindow() {
             const meta = widgetMeta(id);
             if (!meta) return null;
             return (
-              <button
+              <MotionDockItem
                 key={id}
-                data-icon
-                data-no-drag
-                type="button"
-                aria-label={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
+                mouseAxis={mouseAxis}
+                baseSize={utilSize}
+                maxScale={maxMag}
+                variant={vertical ? "square" : "pill"}
+                vertical={vertical}
+                lift={7}
+                tip={meta.name}
+                ariaLabel={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
+                noDrag
                 onClick={(event) =>
                   openCommand(
                     "open_widget",
@@ -639,20 +635,10 @@ export default function DockWindow() {
                     event.currentTarget,
                   )
                 }
-                className={`group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center gap-1.5 will-change-transform active:scale-95 ${
+                className={`group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center gap-1.5 will-change-transform ${
                   vertical ? "" : "px-2.5"
                 }`}
-                style={{
-                  height: "calc(var(--glacier-icon-base) * 0.9)",
-                  minWidth: "calc(var(--glacier-icon-base) * 0.9)",
-                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-                  transform:
-                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-                  transformOrigin: vertical ? "center left" : "center bottom",
-                }}
               >
-                {!vertical && <span className="glacier-dock-tip">{meta.name}</span>}
                 <span className="text-[13px] leading-none">
                   {CATEGORY_META[meta.category].glyph}
                 </span>
@@ -661,159 +647,129 @@ export default function DockWindow() {
                     {inlineWidgetLabel(id, meta.name)}
                   </span>
                 )}
-              </button>
+              </MotionDockItem>
             );
           })}
 
           {showQuickFolders && (
             <>
-              <button
-                data-icon
-                data-no-drag
-                type="button"
-                aria-label="Downloads"
+              <MotionDockItem
+                mouseAxis={mouseAxis}
+                baseSize={utilSize}
+                maxScale={maxMag}
+                vertical={vertical}
+                lift={8}
+                tip="Downloads"
+                ariaLabel="Downloads"
+                noDrag
                 onClick={() => invoke("open_path", { path: "shell:Downloads" }).catch(() => {})}
-                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
-                style={{
-                  width: "calc(var(--glacier-icon-base) * 0.92)",
-                  height: "calc(var(--glacier-icon-base) * 0.92)",
-                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-                  transform:
-                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-                  transformOrigin: vertical ? "center left" : "center bottom",
-                }}
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
               >
-                {!vertical && <span className="glacier-dock-tip">Downloads</span>}
                 <DownloadsIcon />
-              </button>
+              </MotionDockItem>
 
-              <button
-                data-icon
-                data-no-drag
-                type="button"
-                aria-label="Recycle Bin"
+              <MotionDockItem
+                mouseAxis={mouseAxis}
+                baseSize={utilSize}
+                maxScale={maxMag}
+                vertical={vertical}
+                lift={8}
+                tip="Recycle Bin"
+                ariaLabel="Recycle Bin"
+                noDrag
                 onClick={() =>
                   invoke("open_path", { path: "shell:RecycleBinFolder" }).catch(() => {})
                 }
-                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
-                style={{
-                  width: "calc(var(--glacier-icon-base) * 0.92)",
-                  height: "calc(var(--glacier-icon-base) * 0.92)",
-                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-                  transform:
-                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-                  transformOrigin: vertical ? "center left" : "center bottom",
-                }}
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
               >
-                {!vertical && <span className="glacier-dock-tip">Recycle Bin</span>}
                 <TrashBinIcon />
-              </button>
+              </MotionDockItem>
             </>
           )}
 
-          <button
-            data-icon
-            data-no-drag
-            type="button"
-            aria-label="App Library"
+          <MotionDockItem
+            mouseAxis={mouseAxis}
+            baseSize={utilSize}
+            maxScale={maxMag}
+            vertical={vertical}
+            lift={8}
+            tip="App Library"
+            ariaLabel="App Library"
+            noDrag
             onClick={() => openCommand("open_launcher")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
-            style={{
-              width: "calc(var(--glacier-icon-base) * 0.92)",
-              height: "calc(var(--glacier-icon-base) * 0.92)",
-              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
-            }}
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
           >
-            {!vertical && <span className="glacier-dock-tip">App Library</span>}
             <StartGridIcon />
-          </button>
+          </MotionDockItem>
 
-          <button
-            data-icon
-            data-no-drag
-            type="button"
-            aria-label="Glacier Activity Monitor"
+          <MotionDockItem
+            mouseAxis={mouseAxis}
+            baseSize={utilSize}
+            maxScale={maxMag}
+            vertical={vertical}
+            lift={8}
+            tip="Activity Monitor"
+            ariaLabel="Glacier Activity Monitor"
+            noDrag
             onClick={() => openCommand("task_manager")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
-            style={{
-              width: "calc(var(--glacier-icon-base) * 0.92)",
-              height: "calc(var(--glacier-icon-base) * 0.92)",
-              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
-            }}
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
           >
-            {!vertical && <span className="glacier-dock-tip">Activity Monitor</span>}
             <ActivityMonitorIcon />
-          </button>
+          </MotionDockItem>
 
-          <button
-            data-icon
-            data-no-drag
-            type="button"
-            aria-label="Glacier Settings"
+          <MotionDockItem
+            mouseAxis={mouseAxis}
+            baseSize={utilSize}
+            maxScale={maxMag}
+            vertical={vertical}
+            lift={8}
+            tip="Settings"
+            ariaLabel="Glacier Settings"
+            noDrag
             onClick={() => openCommand("open_settings")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
-            style={{
-              width: "calc(var(--glacier-icon-base) * 0.92)",
-              height: "calc(var(--glacier-icon-base) * 0.92)",
-              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
-            }}
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
           >
-            {!vertical && <span className="glacier-dock-tip">Settings</span>}
             <SettingsGearIcon />
-          </button>
+          </MotionDockItem>
 
-          <button
-            data-icon
-            data-no-drag
-            type="button"
-            aria-label="Spotlight (Alt + Space)"
+          <MotionDockItem
+            mouseAxis={mouseAxis}
+            baseSize={utilSize}
+            maxScale={maxMag}
+            vertical={vertical}
+            lift={8}
+            tip="Spotlight (Alt + Space)"
+            ariaLabel="Spotlight (Alt + Space)"
+            noDrag
             onClick={() => openCommand("open_spotlight")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform active:scale-90"
-            style={{
-              width: "calc(var(--glacier-icon-base) * 0.92)",
-              height: "calc(var(--glacier-icon-base) * 0.92)",
-              marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
-              marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
-              transform:
-                "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-              transformOrigin: vertical ? "center left" : "center bottom",
-            }}
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
           >
-            {!vertical && <span className="glacier-dock-tip">Spotlight (Alt + Space)</span>}
             <SpotlightSearchIcon />
-          </button>
+          </MotionDockItem>
         </div>
 
         {!vertical && (
           <>
             <span className={dividerClass} aria-hidden />
-            <div data-no-drag className="relative flex items-center gap-1.5">
+            <div data-no-drag className="relative flex items-end gap-1.5">
               {showTelemetryRings && (
                 <>
                   <DockRingMeter
                     label="CPU"
                     value={telemetry.cpuPercent}
                     tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
+                    mouseAxis={mouseAxis}
+                    baseSize={baseIconSize}
+                    maxScale={maxMag}
                     onClick={() => openCommand("task_manager")}
                   />
                   <DockRingMeter
                     label="RAM"
                     value={telemetry.ramPercent}
                     tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
+                    mouseAxis={mouseAxis}
+                    baseSize={baseIconSize}
+                    maxScale={maxMag}
                     onClick={() => openCommand("task_manager")}
                   />
                   {telemetry.gpuPercent !== null && (
@@ -821,6 +777,9 @@ export default function DockWindow() {
                       label="GPU"
                       value={telemetry.gpuPercent}
                       tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
+                      mouseAxis={mouseAxis}
+                      baseSize={baseIconSize}
+                      maxScale={maxMag}
                       onClick={() => openCommand("task_manager")}
                     />
                   )}
@@ -830,14 +789,30 @@ export default function DockWindow() {
                       value={telemetry.batteryPercent}
                       charging={telemetry.batteryCharging}
                       tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
+                      mouseAxis={mouseAxis}
+                      baseSize={baseIconSize}
+                      maxScale={maxMag}
                     />
                   )}
                 </>
               )}
-              {showAiUsage && <AiUsageIsland vertical={vertical} />}
-              <button
-                type="button"
-                aria-label="Hidden & Background Apps"
+              {showAiUsage && (
+                <AiUsageIsland
+                  vertical={vertical}
+                  mouseAxis={mouseAxis}
+                  baseSize={baseIconSize}
+                  maxScale={maxMag}
+                />
+              )}
+              <MotionDockItem
+                mouseAxis={mouseAxis}
+                baseSize={Math.round(baseIconSize * 0.82)}
+                maxScale={maxMag}
+                vertical={vertical}
+                lift={6}
+                tip="Hidden Apps"
+                ariaLabel="Hidden & Background Apps"
+                noDrag
                 onClick={(event) =>
                   openCommand(
                     "open_widget",
@@ -849,11 +824,10 @@ export default function DockWindow() {
                     event.currentTarget,
                   )
                 }
-                className="group glacier-widget-pill glacier-icon-glow relative grid size-8 shrink-0 place-items-center transition-transform duration-150 active:scale-90"
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
               >
-                <span className="glacier-dock-tip">Hidden Apps</span>
                 <ChevronTrayIcon />
-              </button>
+              </MotionDockItem>
               <div className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5">
                 <div className="flex flex-col leading-none">
                   <span className="text-[9px] font-semibold tracking-wider opacity-55">

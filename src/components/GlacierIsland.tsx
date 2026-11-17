@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+
+import { MAC_MODAL_SPRING } from "../sdk/motion";
 
 export interface IslandNotification {
   id: string;
@@ -26,46 +29,49 @@ export interface GlacierIslandProps {
  */
 export function GlacierIsland({ notification, onDismiss, onReply }: GlacierIslandProps) {
   const [reply, setReply] = useState("");
-  const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (!notification) {
-      setVisible(false);
-      return;
-    }
+    if (!notification) return;
     setReply("");
-    setVisible(true);
     if (notification.kind !== "timer" && notification.kind !== "download") return;
     // Hardware/download/timer toasts self-dismiss.
     const id = window.setTimeout(() => onDismiss(notification.id), 6000);
     return () => window.clearTimeout(id);
   }, [notification, onDismiss]);
 
-  if (!notification) return null;
-
-  const color = notification.color ?? "var(--glacier-accent)";
-  const label =
-    notification.kind === "hardware"
+  const color = notification?.color ?? "var(--glacier-accent)";
+  const label = notification
+    ? notification.kind === "hardware"
       ? "Connected"
       : notification.kind === "download"
         ? "Download"
         : notification.kind === "timer"
           ? "Timer"
-          : notification.app;
+          : notification.app
+    : "";
 
   return (
-    <div
-      className="glacier-dock-glass pointer-events-auto flex items-center gap-3 overflow-hidden transition-all duration-300"
-      style={{
-        maxWidth: visible ? 340 : 0,
-        opacity: visible ? 1 : 0,
-        height: "var(--glacier-bar-height)",
-        marginRight: visible ? 8 : 0,
-        transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
-        borderRadius: "var(--glacier-radius)",
-        paddingInline: visible ? 10 : 0,
-      }}
-    >
+    <AnimatePresence>
+      {notification && (
+        <motion.div
+          key={notification.id}
+          initial={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0, scale: 0.94 }}
+          animate={{
+            width: "auto",
+            maxWidth: 340,
+            opacity: 1,
+            marginRight: 8,
+            paddingInline: 10,
+            scale: 1,
+          }}
+          exit={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0, scale: 0.94 }}
+          transition={MAC_MODAL_SPRING}
+          className="glacier-dock-glass pointer-events-auto flex items-center gap-3 overflow-hidden will-change-transform"
+          style={{
+            height: "var(--glacier-bar-height)",
+            borderRadius: "var(--glacier-radius)",
+          }}
+        >
       <span
         className="grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-bold uppercase shadow-sm"
         style={{
@@ -117,6 +123,8 @@ export function GlacierIsland({ notification, onDismiss, onReply }: GlacierIslan
       >
         Dismiss
       </button>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

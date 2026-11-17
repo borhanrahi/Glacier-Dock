@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Search } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 
 import { useAppIcon } from "../sdk/hooks";
+import { MAC_MODAL_SPRING, useWindowMotion } from "../sdk/motion";
 import { evaluateExpression } from "../utils/expression";
 import { appHue, initials, searchApps, type InstalledApp } from "../utils/apps";
 
@@ -58,6 +60,7 @@ export default function SpotlightWindow() {
   const [selected, setSelected] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { showSeq, visible, dismiss } = useWindowMotion();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -69,6 +72,10 @@ export default function SpotlightWindow() {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
+
+  useEffect(() => {
+    window.setTimeout(() => inputRef.current?.focus(), 20);
+  }, [showSeq]);
 
   useEffect(() => setSelected(0), [query]);
 
@@ -122,7 +129,7 @@ export default function SpotlightWindow() {
 
   const onKeyDown = async (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
-      await hideSelf();
+      dismiss();
       return;
     }
     if (event.key === "ArrowDown") {
@@ -152,7 +159,16 @@ export default function SpotlightWindow() {
 
   return (
     <div className="grid h-full w-full place-items-start p-2">
-      <div className="glacier-dock-glass glacier-modal-enter relative w-full overflow-hidden rounded-[18px]">
+      <AnimatePresence mode="wait">
+        {visible && (
+          <motion.div
+            key={showSeq}
+            initial={{ opacity: 0, y: -10, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97, transition: { duration: 0.11 } }}
+            transition={MAC_MODAL_SPRING}
+            className="glacier-dock-glass relative w-full overflow-hidden rounded-[18px] will-change-transform"
+          >
         <span className="glacier-dock-sheen" aria-hidden />
         <div className="flex items-center gap-2 px-3 py-2.5">
           <Search className="size-4 opacity-60" />
@@ -225,7 +241,9 @@ export default function SpotlightWindow() {
             <div className="px-3 py-6 text-center text-xs opacity-50">No results</div>
           )}
         </div>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

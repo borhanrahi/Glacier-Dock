@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AnimatePresence, motion, type MotionValue } from "motion/react";
+
+import { MAC_MODAL_SPRING } from "../sdk/motion";
+import { MotionDockItem } from "./MotionDockItem";
 
 export interface AiQuotaWindow {
   label: string;
@@ -35,7 +39,17 @@ const PROVIDER_SHORT: Record<string, string> = {
  * gauges for active AI clients (Claude Code, Codex, Gemini CLI, Antigravity)
  * and opens a detailed quota popover on hover/click.
  */
-export function AiUsageIsland({ vertical = false }: { vertical?: boolean }) {
+export function AiUsageIsland({
+  vertical = false,
+  mouseAxis,
+  baseSize,
+  maxScale,
+}: {
+  vertical?: boolean;
+  mouseAxis: MotionValue<number>;
+  baseSize: number;
+  maxScale: number;
+}) {
   const [providers, setProviders] = useState<AiProviderUsage[]>([]);
   const [open, setOpen] = useState(false);
 
@@ -58,16 +72,24 @@ export function AiUsageIsland({ vertical = false }: { vertical?: boolean }) {
 
   return (
     <div data-no-drag className="relative">
-      <button
-        type="button"
-        onClick={() =>
-          invoke("open_widget", { id: "ai-limits-dual", width: 320, height: 220 }).catch(() =>
+      <MotionDockItem
+        mouseAxis={mouseAxis}
+        baseSize={Math.round(baseSize * 0.9)}
+        maxScale={maxScale}
+        variant="pill"
+        vertical={vertical}
+        lift={5}
+        tip="AI Plan Usage"
+        ariaLabel="AI Plan Usage"
+        noDrag
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = (window.screenX || 0) + rect.left + rect.width / 2;
+          invoke("open_widget", { id: "ai-limits-dual", width: 320, height: 220, x }).catch(() =>
             setOpen((v) => !v),
-          )
-        }
-        aria-label="AI Plan Usage"
-        title="Click to open AI Plan Usage details"
-        className="glacier-widget-pill glacier-icon-glow flex items-center gap-2 px-2.5 py-1.5 text-[11px]"
+          );
+        }}
+        className="group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center gap-2 px-2.5 text-[11px] will-change-transform"
       >
         {ready.map((provider, idx) => {
           const primary = provider.windows[0];
@@ -103,10 +125,17 @@ export function AiUsageIsland({ vertical = false }: { vertical?: boolean }) {
             </span>
           );
         })}
-      </button>
+      </MotionDockItem>
 
-      {open && (
-        <div className="glacier-dock-glass absolute bottom-[calc(100%+12px)] right-0 z-50 w-64 overflow-hidden rounded-[14px] p-3 text-[11px]">
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.96 }}
+            transition={MAC_MODAL_SPRING}
+            className="glacier-dock-glass absolute bottom-[calc(100%+12px)] right-0 z-50 w-64 overflow-hidden rounded-[14px] p-3 text-[11px] will-change-transform"
+          >
           <span className="glacier-dock-sheen" aria-hidden />
           <div className="mb-2 flex items-center justify-between">
             <span className="font-semibold">AI Plan Usage</span>
@@ -150,8 +179,9 @@ export function AiUsageIsland({ vertical = false }: { vertical?: boolean }) {
               );
             })}
           </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

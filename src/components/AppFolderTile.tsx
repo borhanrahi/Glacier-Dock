@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, type MotionValue } from "motion/react";
 
+import { MAC_MODAL_SPRING } from "../sdk/motion";
+import { MotionDockItem } from "./MotionDockItem";
 import {
   FOLDER_COLORS,
   appHue,
@@ -11,6 +14,9 @@ export interface AppFolderTileProps {
   name: string;
   color: string;
   apps: InstalledApp[];
+  mouseAxis: MotionValue<number>;
+  baseSize: number;
+  maxScale: number;
   onLaunch: (app: InstalledApp) => void;
   onRename: (name: string) => void;
   onColor: (color: string) => void;
@@ -28,6 +34,9 @@ export function AppFolderTile({
   name,
   color,
   apps,
+  mouseAxis,
+  baseSize,
+  maxScale,
   onLaunch,
   onRename,
   onColor,
@@ -57,26 +66,27 @@ export function AppFolderTile({
 
   return (
     <div className="relative">
-      <button
-        type="button"
+      <MotionDockItem
+        mouseAxis={mouseAxis}
+        baseSize={baseSize}
+        maxScale={maxScale}
+        vertical={vertical}
+        tip={name}
+        ariaLabel={name}
         onClick={() => setOpen((value) => !value)}
-        title={name}
-        className="relative grid size-[var(--glacier-icon-base)] place-items-center rounded-xl transition-transform"
+        className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-xl will-change-transform"
         style={{
-          transform:
-            "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-          transformOrigin: vertical ? "center left" : "center bottom",
           background: `${color}22`,
           boxShadow: `inset 0 0 0 1px ${color}`,
         }}
       >
-        <span className="grid grid-cols-2 gap-0.5">
+        <span className="grid size-[74%] grid-cols-2 gap-0.5">
           {Array.from({ length: 4 }).map((_, index) => {
             const app = preview[index];
             return (
               <span
                 key={index}
-                className="grid size-[42%] min-h-2 min-w-2 place-items-center rounded-[3px] text-[6px] font-bold"
+                className="grid size-full place-items-center rounded-[4px] text-[6px] font-bold"
                 style={{
                   background: app
                     ? `hsl(${appHue(app.name)} 70% 52% / 0.85)`
@@ -89,19 +99,24 @@ export function AppFolderTile({
             );
           })}
         </span>
-      </button>
+      </MotionDockItem>
 
-      {open && (
-        <div
-          ref={popoverRef}
-          className="absolute z-50 w-64 rounded-2xl p-3 backdrop-blur-2xl"
-          style={{
-            background: "var(--glacier-elevated)",
-            boxShadow: "var(--glacier-shadow)",
-            bottom: vertical ? undefined : "calc(100% + 12px)",
-            left: vertical ? "calc(100% + 12px)" : 0,
-          }}
-        >
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            ref={popoverRef}
+            initial={{ opacity: 0, y: 10, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.96 }}
+            transition={MAC_MODAL_SPRING}
+            className="absolute z-50 w-64 rounded-2xl p-3 backdrop-blur-2xl will-change-transform"
+            style={{
+              background: "var(--glacier-elevated)",
+              boxShadow: "var(--glacier-shadow)",
+              bottom: vertical ? undefined : "calc(100% + 12px)",
+              left: vertical ? "calc(100% + 12px)" : 0,
+            }}
+          >
           <div className="mb-2 flex items-center gap-2">
             {editing ? (
               <input
@@ -188,8 +203,9 @@ export function AppFolderTile({
               />
             ))}
           </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

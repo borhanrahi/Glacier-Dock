@@ -5,9 +5,10 @@
  */
 
 import { Suspense, useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { AnimatePresence, motion } from "motion/react";
 
+import { MAC_MODAL_SPRING, useWindowMotion } from "../sdk/motion";
 import { widgetComponent, widgetMeta } from "../widgets/registry";
 
 function fromQuery(): string {
@@ -20,6 +21,7 @@ function fromQuery(): string {
 
 export default function WidgetFlyoutWindow() {
   const [id, setId] = useState(fromQuery);
+  const { showSeq, visible, dismiss } = useWindowMotion();
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -30,7 +32,7 @@ export default function WidgetFlyoutWindow() {
       .catch(() => {});
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        invoke("hide_window").catch(() => {});
+        dismiss();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -38,38 +40,51 @@ export default function WidgetFlyoutWindow() {
       unlisten?.();
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [dismiss]);
 
   const meta = widgetMeta(id);
   const Widget = widgetComponent(id);
 
+  if (!id) return null;
+
   if (!meta || !Widget) {
     return (
       <div className="grid h-full place-items-center rounded-2xl border border-[var(--glacier-border)] bg-[var(--glacier-surface)] text-[11px] text-[var(--glacier-text-muted)]">
-        No widget “{id || "unknown"}” in the catalog.
+        No widget “{id}” in the catalog.
       </div>
     );
   }
 
   return (
-    <div key={id} className="glacier-modal-enter relative h-full w-full will-change-transform">
-      <Suspense
-        fallback={
-          <div className="grid h-full place-items-center text-[11px] text-[var(--glacier-text-muted)]">
-            Loading {meta.name}…
-          </div>
-        }
-      >
-        <Widget />
-      </Suspense>
-      <button
-        type="button"
-        title="Close"
-        onClick={() => invoke("hide_window").catch(() => {})}
-        className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full bg-black/30 text-[10px] text-white/70 hover:bg-black/60"
-      >
-        ×
-      </button>
-    </div>
+    <AnimatePresence mode="wait">
+      {visible && (
+        <motion.div
+          key={`${id}-${showSeq}`}
+          initial={{ opacity: 0, y: 12, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.11 } }}
+          transition={MAC_MODAL_SPRING}
+          className="relative h-full w-full will-change-transform"
+        >
+          <Suspense
+            fallback={
+              <div className="grid h-full place-items-center text-[11px] text-[var(--glacier-text-muted)]">
+                Loading {meta.name}…
+              </div>
+            }
+          >
+            <Widget />
+          </Suspense>
+          <button
+            type="button"
+            title="Close"
+            onClick={dismiss}
+            className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full bg-black/30 text-[10px] text-white/70 transition-colors hover:bg-black/60"
+          >
+            ×
+          </button>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

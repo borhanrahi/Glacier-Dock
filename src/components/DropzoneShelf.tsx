@@ -1,4 +1,7 @@
 import { useMemo } from "react";
+import { AnimatePresence, motion } from "motion/react";
+
+import { MAC_MODAL_SPRING } from "../sdk/motion";
 
 export interface ShelfItem {
   path: string;
@@ -33,21 +36,21 @@ export function DropzoneShelf({ items, open, onRemove, onClear, onReveal }: Drop
   const label = useMemo(() => (total === 1 ? "1 item" : `${total} items`), [total]);
 
   return (
-    <div
-      className="pointer-events-auto flex items-center gap-2 overflow-hidden transition-all duration-300"
-      style={{
-        width: open ? "auto" : 0,
-        maxWidth: open ? 420 : 0,
-        opacity: open ? 1 : 0,
-        height: "var(--glacier-bar-height)",
-        marginRight: open ? 8 : 0,
-        paddingInline: open ? 10 : 0,
-        borderRadius: "var(--glacier-radius)",
-        background: "var(--glacier-elevated)",
-        boxShadow: open ? "0 0 0 1px var(--glacier-accent), var(--glacier-shadow)" : "none",
-        transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
-      }}
-    >
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0 }}
+          animate={{ width: "auto", maxWidth: 420, opacity: 1, marginRight: 8, paddingInline: 10 }}
+          exit={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0 }}
+          transition={MAC_MODAL_SPRING}
+          className="pointer-events-auto flex items-center gap-2 overflow-hidden will-change-transform"
+          style={{
+            height: "var(--glacier-bar-height)",
+            borderRadius: "var(--glacier-radius)",
+            background: "var(--glacier-elevated)",
+            boxShadow: "0 0 0 1px var(--glacier-accent), var(--glacier-shadow)",
+          }}
+        >
       <div className="flex items-center gap-1.5">
         {items.slice(0, 5).map((item) => (
           <button
@@ -91,7 +94,9 @@ export function DropzoneShelf({ items, open, onRemove, onClear, onReveal }: Drop
       >
         Clear
       </button>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

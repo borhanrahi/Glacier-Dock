@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AnimatePresence, motion } from "motion/react";
 import {
   Activity,
   AppWindow,
@@ -20,6 +21,7 @@ import {
 
 import glacier, { type InstalledWidget } from "../sdk/bridge";
 import { useAppIcon, useTelemetry } from "../sdk/hooks";
+import { MAC_TAB_SPRING } from "../sdk/motion";
 import type { InstalledApp, PinnedApp } from "../utils/apps";
 import { applyAccent, applyPreset, applyTintAlpha } from "../styles/theme";
 import {
@@ -349,7 +351,9 @@ export default function SettingsWindow() {
                 }`}
               >
                 {active && (
-                  <span
+                  <motion.span
+                    layoutId="settings-active-tab"
+                    transition={MAC_TAB_SPRING}
                     className="absolute left-0.5 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full"
                     style={{ background: "var(--glacier-aurora)" }}
                   />
@@ -396,20 +400,32 @@ export default function SettingsWindow() {
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {!cfg ? (
             <p className="text-[12px] opacity-60">Loading…</p>
-          ) : tab === "appearance" ? (
-            <AppearanceTab cfg={cfg} patchAppearance={patchAppearance} patch={patch} />
-          ) : tab === "dock" ? (
-            <DockTab cfg={cfg} patch={patch} />
-          ) : tab === "widgets" ? (
-            <WidgetsTab cfg={cfg} patch={patch} />
-          ) : tab === "automations" ? (
-            <AutomationsTab cfg={cfg} patch={patch} />
-          ) : tab === "telemetry" ? (
-            <TelemetryTab cfg={cfg} patch={patch} frame={frame} />
-          ) : tab === "advanced" ? (
-            <AdvancedTab cfg={cfg} patch={patch} />
           ) : (
-            <AboutTab />
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={tab}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {tab === "appearance" ? (
+                  <AppearanceTab cfg={cfg} patchAppearance={patchAppearance} patch={patch} />
+                ) : tab === "dock" ? (
+                  <DockTab cfg={cfg} patch={patch} />
+                ) : tab === "widgets" ? (
+                  <WidgetsTab cfg={cfg} patch={patch} />
+                ) : tab === "automations" ? (
+                  <AutomationsTab cfg={cfg} patch={patch} />
+                ) : tab === "telemetry" ? (
+                  <TelemetryTab cfg={cfg} patch={patch} frame={frame} />
+                ) : tab === "advanced" ? (
+                  <AdvancedTab cfg={cfg} patch={patch} />
+                ) : (
+                  <AboutTab />
+                )}
+              </motion.div>
+            </AnimatePresence>
           )}
         </div>
 

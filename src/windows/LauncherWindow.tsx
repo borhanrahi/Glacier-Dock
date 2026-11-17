@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { AnimatePresence, motion } from "motion/react";
 
 import { useAppIcon } from "../sdk/hooks";
+import { MAC_MODAL_SPRING, useWindowMotion } from "../sdk/motion";
 import {
   CATEGORIES,
   appHue,
@@ -54,6 +56,7 @@ export default function LauncherWindow() {
   const [pinned, setPinned] = useState<PinnedApp[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Category | null>(null);
+  const { showSeq, visible, dismiss } = useWindowMotion();
 
   useEffect(() => {
     invoke<InstalledApp[]>("installed_apps", { limit: 500 })
@@ -97,16 +100,23 @@ export default function LauncherWindow() {
   };
 
   return (
-    <div
-      className="glacier-dock-glass glacier-modal-enter relative flex h-full w-full flex-col overflow-hidden rounded-[18px]"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          if (selected) setSelected(null);
-          else hideSelf();
-        }
-      }}
-      tabIndex={-1}
-    >
+    <AnimatePresence mode="wait">
+      {visible && (
+        <motion.div
+          key={showSeq}
+          initial={{ opacity: 0, y: 12, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.11 } }}
+          transition={MAC_MODAL_SPRING}
+          className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px] will-change-transform"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              if (selected) setSelected(null);
+              else dismiss();
+            }
+          }}
+          tabIndex={-1}
+        >
       <span className="glacier-dock-sheen" aria-hidden />
       <div data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
         {selected && (
@@ -210,6 +220,8 @@ export default function LauncherWindow() {
           </div>
         )}
       </div>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

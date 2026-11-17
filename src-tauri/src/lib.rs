@@ -611,18 +611,22 @@ fn preview_windows(pid: u32) -> serde_json::Value {
 
 /// Show a live DWM thumbnail of the first visible window owned by `pid`.
 #[tauri::command]
-fn show_app_preview(app: AppHandle, pid: u32) {
+async fn show_app_preview(app: AppHandle, pid: u32) {
     #[cfg(windows)]
     {
+        let windows = tauri::async_runtime::spawn_blocking(move || {
+            win32::dwm_preview::windows_for_pid(pid)
+        })
+        .await
+        .unwrap_or_default();
+        let Some(target) = windows.first() else {
+            hide_app_preview(app);
+            return;
+        };
         let Some(window) = ensure_window(&app, "preview", "Preview", 280.0, 180.0) else {
             return;
         };
         let Ok(preview_hwnd) = window.hwnd() else {
-            return;
-        };
-        let windows = win32::dwm_preview::windows_for_pid(pid);
-        let Some(target) = windows.first() else {
-            let _ = window.hide();
             return;
         };
         if let Err(err) =
@@ -640,17 +644,22 @@ fn show_app_preview(app: AppHandle, pid: u32) {
 
 /// Hover preview: find the process by image name and thumbnail its window.
 #[tauri::command]
-fn show_preview_for_image(app: AppHandle, image: String) {
+async fn show_preview_for_image(app: AppHandle, image: String) {
     #[cfg(windows)]
     {
-        let snapshot = win32::process_manager::snapshot();
-        if let Some(row) = snapshot
-            .processes
-            .iter()
-            .find(|row| row.name.eq_ignore_ascii_case(&image))
-        {
-            let pid = row.pid;
-            show_app_preview(app, pid);
+        let pid = tauri::async_runtime::spawn_blocking(move || {
+            let snapshot = win32::process_manager::snapshot();
+            snapshot
+                .processes
+                .iter()
+                .find(|row| row.name.eq_ignore_ascii_case(&image))
+                .map(|row| row.pid)
+        })
+        .await
+        .ok()
+        .flatten();
+        if let Some(pid) = pid {
+            show_app_preview(app, pid).await;
         }
     }
     #[cfg(not(windows))]
@@ -1042,16 +1051,19 @@ fn ensure_window_query(
 
 /// `Alt + Space`: hide when open, otherwise summon Spotlight.
 pub fn toggle_spotlight(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("spotlight") {
-        if window.is_visible().unwrap_or(false) {
-            let _ = window.hide();
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(window) = handle.get_webview_window("spotlight") {
+            if window.is_visible().unwrap_or(false) {
+                let _ = window.hide();
+                return;
+            }
+            let _ = window.show();
+            let _ = window.set_focus();
             return;
         }
-        let _ = window.show();
-        let _ = window.set_focus();
-        return;
-    }
-    let _ = ensure_window(app, "spotlight", "Glacier Spotlight", 760.0, 480.0);
+        let _ = ensure_window(&handle, "spotlight", "Glacier Spotlight", 760.0, 480.0);
+    });
 }
 
 #[tauri::command]

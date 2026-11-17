@@ -239,7 +239,7 @@ impl Default for AutomationSettings {
             auto_dnd: true,
             ai_quota_alerts: true,
             renewal_reminders: true,
-            intelli_hide: true,
+            intelli_hide: false,
             low_battery_power_shift: false,
         }
     }

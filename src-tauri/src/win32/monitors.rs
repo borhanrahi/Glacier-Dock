@@ -14,10 +14,10 @@ use windows::core::{w, BOOL};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
-    SetWindowDisplayAffinity, SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, HWND_MESSAGE,
-    MSG, WDA_EXCLUDEFROMCAPTURE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_DISPLAYCHANGE,
-    WM_SETTINGCHANGE, WNDCLASSW, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongW,
+    RegisterClassW, SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowLongW, TranslateMessage,
+    GWLP_USERDATA, GWL_EXSTYLE, HWND_MESSAGE, MSG, WDA_EXCLUDEFROMCAPTURE, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_DISPLAYCHANGE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use crate::config::{self, DockSize, Edge};
@@ -161,10 +161,14 @@ pub fn sync_docks(app: &AppHandle) {
                         if let Ok(hwnd) = window.hwnd() {
                             crate::win32::hit_test::install(hwnd.0 as isize);
                             unsafe {
-                                let _ = SetWindowDisplayAffinity(
-                                    HWND(hwnd.0),
-                                    WDA_EXCLUDEFROMCAPTURE,
+                                let raw = HWND(hwnd.0);
+                                let ex = GetWindowLongW(raw, GWL_EXSTYLE);
+                                let _ = SetWindowLongW(
+                                    raw,
+                                    GWL_EXSTYLE,
+                                    ex | WS_EX_TOOLWINDOW.0 as i32,
                                 );
+                                let _ = SetWindowDisplayAffinity(raw, WDA_EXCLUDEFROMCAPTURE);
                             }
                         }
                     }

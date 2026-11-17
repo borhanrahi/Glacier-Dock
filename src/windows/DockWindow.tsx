@@ -370,6 +370,18 @@ export default function DockWindow() {
     );
   }, [layout, apps, transientApps, folders, magnification]);
 
+  const openCommand = useCallback((cmd: string, args?: Record<string, unknown>) => {
+    invoke(cmd, args).catch((error) => {
+      setIsland({
+        id: `cmd-${Date.now()}`,
+        app: "Glacier Dock",
+        title: `Action failed (${cmd})`,
+        body: error instanceof Error ? error.message : String(error),
+        kind: "message",
+      });
+    });
+  }, []);
+
   const launch = useCallback(async (app: InstalledApp) => {
     setBouncingApp(app.path);
     window.clearTimeout(bounceTimer.current);
@@ -601,11 +613,11 @@ export default function DockWindow() {
                 type="button"
                 aria-label={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
                 onClick={() =>
-                  invoke("open_widget", {
+                  openCommand("open_widget", {
                     id,
                     width: meta.width,
                     height: meta.height,
-                  }).catch(() => {})
+                  })
                 }
                 className={`group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center gap-1.5 transition-transform duration-150 active:scale-95 ${
                   vertical ? "" : "px-2.5"
@@ -668,7 +680,7 @@ export default function DockWindow() {
             data-no-drag
             type="button"
             aria-label="App Library"
-            onClick={() => invoke("open_launcher").catch(() => {})}
+            onClick={() => openCommand("open_launcher")}
             className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
@@ -683,7 +695,7 @@ export default function DockWindow() {
             data-no-drag
             type="button"
             aria-label="Glacier Activity Monitor"
-            onClick={() => invoke("task_manager").catch(() => {})}
+            onClick={() => openCommand("task_manager")}
             className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
@@ -698,7 +710,7 @@ export default function DockWindow() {
             data-no-drag
             type="button"
             aria-label="Glacier Settings"
-            onClick={() => invoke("open_settings").catch(() => {})}
+            onClick={() => openCommand("open_settings")}
             className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
@@ -713,7 +725,7 @@ export default function DockWindow() {
             data-no-drag
             type="button"
             aria-label="Spotlight (Alt + Space)"
-            onClick={() => invoke("open_spotlight").catch(() => {})}
+            onClick={() => openCommand("open_spotlight")}
             className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
               width: "calc(var(--glacier-icon-base) * 0.92)",
@@ -735,20 +747,20 @@ export default function DockWindow() {
                     label="CPU"
                     value={telemetry.cpuPercent}
                     tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
-                    onClick={() => invoke("task_manager").catch(() => {})}
+                    onClick={() => openCommand("task_manager")}
                   />
                   <DockRingMeter
                     label="RAM"
                     value={telemetry.ramPercent}
                     tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
-                    onClick={() => invoke("task_manager").catch(() => {})}
+                    onClick={() => openCommand("task_manager")}
                   />
                   {telemetry.gpuPercent !== null && (
                     <DockRingMeter
                       label="GPU"
                       value={telemetry.gpuPercent}
                       tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
-                      onClick={() => invoke("task_manager").catch(() => {})}
+                      onClick={() => openCommand("task_manager")}
                     />
                   )}
                   {telemetry.batteryPercent !== null && (
@@ -766,11 +778,11 @@ export default function DockWindow() {
                 type="button"
                 aria-label="Hidden & Background Apps"
                 onClick={() =>
-                  invoke("open_widget", {
+                  openCommand("open_widget", {
                     id: "background-apps",
                     width: 340,
                     height: 380,
-                  }).catch(() => {})
+                  })
                 }
                 className="group glacier-widget-pill glacier-icon-glow relative grid size-8 shrink-0 place-items-center transition-transform duration-150 active:scale-90"
               >

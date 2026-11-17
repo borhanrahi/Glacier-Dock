@@ -329,7 +329,7 @@ export default function DockWindow() {
     };
   }, [layout]);
 
-  // 1.32x parabolic fisheye wave over the icon row.
+  // 1.52x macOS parabolic fisheye wave over the icon row.
   useEffect(() => {
     const row = rowRef.current;
     if (!row || !layout) return;
@@ -338,13 +338,14 @@ export default function DockWindow() {
       row,
       () => Array.from(row.querySelectorAll<HTMLElement>("[data-icon]")),
       {
-        maxScale: Math.min(1.35, Math.max(1.28, 1.32)),
-        radius: 140,
+        maxScale: 1.52,
+        radius: 155,
         orientation: vertical ? "vertical" : "horizontal",
-        displacement: 8,
+        displacement: 10,
+        spread: 18,
       },
     );
-  }, [layout, apps, folders]);
+  }, [layout, apps, folders, widgets]);
 
   const launch = useCallback(async (app: InstalledApp) => {
     setBouncingApp(app.path);
@@ -494,14 +495,8 @@ export default function DockWindow() {
 
         <div
           ref={rowRef}
-          onWheel={(event) => {
-            if (vertical || !rowRef.current) return;
-            if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-              rowRef.current.scrollLeft += event.deltaY;
-            }
-          }}
-          className={`glacier-no-scrollbar relative flex items-end gap-1.5 ${
-            vertical ? "flex-col" : "max-w-[calc(100vw-320px)] flex-row overflow-x-auto overflow-y-visible"
+          className={`relative flex items-end gap-1.5 overflow-visible ${
+            vertical ? "flex-col" : "flex-row"
           }`}
           style={{ paddingBlock: vertical ? 6 : 0, paddingInline: vertical ? 0 : 2 }}
         >
@@ -529,10 +524,12 @@ export default function DockWindow() {
                 onPointerEnter={() => startPreview(app)}
                 onPointerLeave={endPreview}
                 aria-label={app.name}
-                className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px] transition-transform duration-150 active:scale-90"
+                className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px] will-change-transform active:scale-90"
                 style={{
                   width: "var(--glacier-icon-base)",
                   height: "var(--glacier-icon-base)",
+                  marginInline: vertical ? undefined : "var(--icon-spread, 0px)",
+                  marginBlock: vertical ? "var(--icon-spread, 0px)" : undefined,
                   transform:
                     "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
                   transformOrigin: vertical ? "center left" : "center bottom",

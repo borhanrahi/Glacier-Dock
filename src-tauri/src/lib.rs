@@ -533,10 +533,12 @@ fn hide_app_preview(app: AppHandle) {
 
 /// Latest telemetry bus frame (sampled on demand when the bus is idle).
 #[tauri::command]
-fn ai_usage_snapshot() -> Vec<serde_json::Value> {
+async fn ai_usage_snapshot() -> Vec<serde_json::Value> {
     #[cfg(windows)]
     {
-        win32::ai_usage::snapshot()
+        tauri::async_runtime::spawn_blocking(win32::ai_usage::snapshot)
+            .await
+            .unwrap_or_default()
             .into_iter()
             .map(|item| serde_json::to_value(item).unwrap_or_default())
             .collect()

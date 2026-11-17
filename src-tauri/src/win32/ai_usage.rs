@@ -82,7 +82,7 @@ fn http_request(
         if session.is_null() {
             return Err("WinHttpOpen failed".into());
         }
-        let _ = WinHttpSetTimeouts(session, 2_500, 2_500, 2_500, 4_000);
+        let _ = WinHttpSetTimeouts(session, 1_200, 1_200, 1_200, 1_500);
 
         let result = (|| -> Result<(u32, String), String> {
             let connection = WinHttpConnect(session, PCWSTR(host_w.as_ptr()), port, 0);
@@ -624,10 +624,14 @@ fn fetch_opencode() -> AiProviderUsage {
 }
 
 pub fn snapshot() -> Vec<AiProviderUsage> {
-    vec![
-        fetch_claude(),
-        fetch_codex(),
-        fetch_opencode(),
-        fetch_gemini(),
-    ]
+    std::thread::scope(|scope| {
+        let claude = scope.spawn(fetch_claude);
+        let codex = scope.spawn(fetch_codex);
+        let opencode = scope.spawn(fetch_opencode);
+        let gemini = scope.spawn(fetch_gemini);
+        [claude, codex, opencode, gemini]
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .collect()
+    })
 }

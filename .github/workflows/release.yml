@@ -169,6 +169,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Disable macOS Spotlight indexing for DMG bundling
+        if: startsWith(matrix.os, 'macos')
+        run: sudo mdutil -a -i off || true
+
       - name: Build and upload to release
         if: needs.create-release.result == 'success'
         uses: tauri-apps/tauri-action@v0

@@ -98,6 +98,62 @@ fn pinned_apps(app: AppHandle) -> Vec<config::PinnedApp> {
     config::load(&app).pinned_apps
 }
 
+#[tauri::command]
+async fn running_apps() -> Vec<config::PinnedApp> {
+    #[cfg(windows)]
+    {
+        return tauri::async_runtime::spawn_blocking(|| {
+            use std::collections::{HashMap, HashSet};
+            let self_pid = std::process::id();
+            let snap = win32::process_manager::snapshot();
+            let mut by_pid: HashMap<u32, (String, String)> = HashMap::new();
+            for proc in snap.processes {
+                if proc.pid == self_pid {
+                    continue;
+                }
+                if let Some(exe) = proc.exe_path {
+                    let lower = exe.to_ascii_lowercase();
+                    if lower.ends_with("\\explorer.exe")
+                        || lower.ends_with("\\searchhost.exe")
+                        || lower.ends_with("\\shellexperiencehost.exe")
+                        || lower.ends_with("\\textinputhost.exe")
+                        || lower.ends_with("\\startmenuexperiencehost.exe")
+                    {
+                        continue;
+                    }
+                    let name = std::path::Path::new(&exe)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&proc.name)
+                        .to_string();
+                    by_pid.insert(proc.pid, (name, exe));
+                }
+            }
+            let mut seen = HashSet::new();
+            let mut out = Vec::new();
+            for (pid, (name, exe)) in by_pid {
+                if win32::dwm_preview::windows_for_pid(pid).is_empty() {
+                    continue;
+                }
+                let key = exe.to_ascii_lowercase();
+                if seen.insert(key) {
+                    out.push(config::PinnedApp { name, path: exe });
+                    if out.len() >= 16 {
+                        break;
+                    }
+                }
+            }
+            out
+        })
+        .await
+        .unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 /// Replace the dock contents (add, remove, reorder).
 #[tauri::command]
 fn set_pinned_apps(app: AppHandle, apps: Vec<config::PinnedApp>) {
@@ -1140,6 +1196,7 @@ pub fn run() {
             restore_native_taskbar,
             monitors,
             installed_apps,
+            running_apps,
             launch_app,
             app_icon,
             open_icons_dir,

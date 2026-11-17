@@ -1,9 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Search } from "lucide-react";
 
+import { useAppIcon } from "../sdk/hooks";
 import { evaluateExpression } from "../utils/expression";
 import { appHue, initials, searchApps, type InstalledApp } from "../utils/apps";
+
+function SearchAppIcon({ app }: { app: InstalledApp }) {
+  const icon = useAppIcon(app.path);
+  if (icon) {
+    return (
+      <img
+        src={icon}
+        alt=""
+        draggable={false}
+        className="size-7 shrink-0 rounded-md object-contain"
+      />
+    );
+  }
+  return (
+    <span
+      className="grid size-7 shrink-0 place-items-center rounded-md text-[9px] font-bold"
+      style={{
+        background: `hsl(${appHue(app.name)} 70% 52% / 0.9)`,
+        color: "#08111d",
+      }}
+    >
+      {initials(app.name)}
+    </span>
+  );
+}
 
 interface Action {
   id: string;
@@ -125,10 +152,10 @@ export default function SpotlightWindow() {
 
   return (
     <div className="grid h-full w-full place-items-start p-2">
-      <div className="glacier-dock-glass relative w-full overflow-hidden rounded-[18px]">
+      <div className="glacier-dock-glass glacier-modal-enter relative w-full overflow-hidden rounded-[18px]">
         <span className="glacier-dock-sheen" aria-hidden />
         <div className="flex items-center gap-2 px-3 py-2.5">
-          <span className="text-sm opacity-60">⌕</span>
+          <Search className="size-4 opacity-60" />
           <input
             ref={inputRef}
             value={query}
@@ -164,15 +191,7 @@ export default function SpotlightWindow() {
               className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left"
               style={{ background: index === selected ? "rgba(56,189,248,0.16)" : "transparent" }}
             >
-              <span
-                className="grid size-7 place-items-center rounded-md text-[9px] font-bold"
-                style={{
-                  background: `hsl(${appHue(app.name)} 70% 52% / 0.9)`,
-                  color: "#08111d",
-                }}
-              >
-                {initials(app.name)}
-              </span>
+              <SearchAppIcon app={app} />
               <span className="min-w-0 flex-1 truncate text-xs">{app.name}</span>
               <span className="shrink-0 text-[9px] uppercase opacity-40">App</span>
             </button>

@@ -98,7 +98,7 @@ export default function LauncherWindow() {
 
   return (
     <div
-      className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px]"
+      className="glacier-dock-glass glacier-modal-enter relative flex h-full w-full flex-col overflow-hidden rounded-[18px]"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           if (selected) setSelected(null);
@@ -108,7 +108,7 @@ export default function LauncherWindow() {
       tabIndex={-1}
     >
       <span className="glacier-dock-sheen" aria-hidden />
-      <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+      <div data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
         {selected && (
           <button
             type="button"

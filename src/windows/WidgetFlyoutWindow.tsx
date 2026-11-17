@@ -43,7 +43,7 @@ export default function WidgetFlyoutWindow() {
   }
 
   return (
-    <div className="relative h-full w-full">
+    <div className="glacier-modal-enter relative h-full w-full">
       <Suspense
         fallback={
           <div className="grid h-full place-items-center text-[11px] text-[var(--glacier-text-muted)]">

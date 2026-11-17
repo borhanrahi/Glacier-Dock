@@ -81,6 +81,14 @@ const EDGE_ALIGN: Record<DockLayout["edge"], string> = {
 function AppIcon({ app }: { app: InstalledApp }) {
   const icon = useAppIcon(app.path);
 
+  if (app.path.toLowerCase().startsWith("ms-settings:")) {
+    return (
+      <span className="grid size-full place-items-center rounded-[10px] border border-white/20 bg-white/10">
+        <SettingsGearIcon />
+      </span>
+    );
+  }
+
   if (icon) {
     return (
       <img
@@ -116,6 +124,7 @@ export default function DockWindow() {
 
   const [layout, setLayout] = useState<DockLayout | null>(null);
   const [apps, setApps] = useState<InstalledApp[]>([]);
+  const [transientApps, setTransientApps] = useState<InstalledApp[]>([]);
   const [folders, setFolders] = useState<FolderGroup[]>([]);
   const [shelf, setShelf] = useState<ShelfItem[]>([]);
   const [shelfOpen, setShelfOpen] = useState(false);
@@ -140,6 +149,27 @@ export default function DockWindow() {
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 1000);
     return () => window.clearInterval(id);
+  }, []);
+
+  // Poll live running Windows apps so newly opened apps appear on the dock.
+  useEffect(() => {
+    let disposed = false;
+    const poll = () => {
+      invoke<InstalledApp[]>("running_apps")
+        .then((list) => {
+          if (disposed || !Array.isArray(list)) return;
+          const lowerPaths = list.map((a) => a.path.toLowerCase());
+          setRunning(lowerPaths);
+          setTransientApps(list);
+        })
+        .catch(() => {});
+    };
+    poll();
+    const id = window.setInterval(poll, 2500);
+    return () => {
+      disposed = true;
+      window.clearInterval(id);
+    };
   }, []);
 
   // Layout + appearance from Rust.
@@ -385,14 +415,14 @@ export default function DockWindow() {
       row,
       () => Array.from(row.querySelectorAll<HTMLElement>("[data-icon]")),
       {
-        maxScale: Math.min(1.42, Math.max(1.1, magnification)),
-        radius: 145,
+        maxScale: Math.min(1.48, Math.max(1.15, magnification)),
+        radius: 165,
         orientation: vertical ? "vertical" : "horizontal",
-        displacement: 8,
-        spread: 14,
+        displacement: 10,
+        spread: 16,
       },
     );
-  }, [layout, apps, folders, magnification]);
+  }, [layout, apps, transientApps, folders, magnification]);
 
   const launch = useCallback(async (app: InstalledApp) => {
     setBouncingApp(app.path);
@@ -467,7 +497,11 @@ export default function DockWindow() {
   const time = clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const weekday = clock.toLocaleDateString([], { weekday: "short" }).toUpperCase();
   const dateLabel = clock.toLocaleDateString([], { day: "numeric", month: "short" });
-  const pinned = useMemo(() => apps, [apps]);
+  const pinned = useMemo(() => {
+    const pinnedLower = new Set(apps.map((a) => a.path.toLowerCase()));
+    const extra = transientApps.filter((a) => !pinnedLower.has(a.path.toLowerCase()));
+    return [...apps, ...extra];
+  }, [apps, transientApps]);
   const dividerClass = vertical
     ? "my-1 h-px w-6 shrink-0 bg-white/[0.12]"
     : "mx-1 h-6 w-px shrink-0 self-center bg-white/[0.12]";
@@ -547,7 +581,7 @@ export default function DockWindow() {
           style={{ paddingBlock: vertical ? 6 : 0, paddingInline: vertical ? 0 : 2 }}
         >
           {pinned.map((app) => {
-            const isRunning = running.includes(app.path);
+            const isRunning = running.includes(app.path.toLowerCase());
             const isBouncing = bouncingApp === app.path;
             const plateClass =
               iconPlate && iconPlate !== "none" ? `glacier-plate-${iconPlate}` : "";

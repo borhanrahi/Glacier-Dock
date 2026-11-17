@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { appHue, initials } from "../utils/apps";
 
@@ -175,9 +176,9 @@ export default function TaskManagerWindow() {
     snapshot.totalRam > 0 ? (snapshot.usedRam / snapshot.totalRam) * 100 : 0;
 
   return (
-    <div className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px]">
+    <div className="glacier-dock-glass glacier-modal-enter relative flex h-full w-full flex-col overflow-hidden rounded-[18px]">
       <span className="glacier-dock-sheen" aria-hidden />
-      <header className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
+      <header data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
         <span className="text-xs font-semibold tracking-wide">Glacier Activity Monitor</span>
         <nav className="ml-3 flex gap-1">
           {TABS.map((entry) => (
@@ -199,6 +200,24 @@ export default function TaskManagerWindow() {
         <span className="ml-auto text-[9px] tabular-nums opacity-50">
           {snapshot.processes.length} processes
         </span>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            title="Minimize"
+            onClick={() => getCurrentWindow().minimize().catch(() => {})}
+            className="grid size-6 place-items-center rounded-md bg-white/10 text-xs hover:bg-white/20"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            title="Close"
+            onClick={() => invoke("hide_window").catch(() => {})}
+            className="grid size-6 place-items-center rounded-md bg-white/10 text-xs hover:bg-red-500/35"
+          >
+            ×
+          </button>
+        </div>
       </header>
 
       <div className="grid grid-cols-2 gap-3 px-4 py-2">

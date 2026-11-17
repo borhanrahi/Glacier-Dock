@@ -3,6 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { AppFolderTile } from "../components/AppFolderTile";
+import {
+  ActivityMonitorIcon,
+  SettingsGearIcon,
+  SpotlightSearchIcon,
+  StartGridIcon,
+} from "../components/DockIcons";
 import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
 import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
 import { attachFisheye } from "../sdk/fisheye";
@@ -109,7 +115,9 @@ export default function DockWindow() {
   const [profile, setProfile] = useState<string | null>(null);
   const [widgets, setWidgets] = useState<string[]>([]);
   const [clock, setClock] = useState(() => new Date());
+  const [bouncingApp, setBouncingApp] = useState<string | null>(null);
   const hoverTimer = useRef<number | undefined>(undefined);
+  const bounceTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const id = window.setInterval(() => setClock(new Date()), 1000);
@@ -331,6 +339,9 @@ export default function DockWindow() {
   }, [layout, apps, folders]);
 
   const launch = useCallback(async (app: InstalledApp) => {
+    setBouncingApp(app.path);
+    window.clearTimeout(bounceTimer.current);
+    bounceTimer.current = window.setTimeout(() => setBouncingApp(null), 440);
     try {
       await invoke("launch_app", { path: app.path });
       setRunning((current) => (current.includes(app.path) ? current : [...current, app.path]));
@@ -385,7 +396,12 @@ export default function DockWindow() {
   const attached = layout?.shape === "attached";
   const full = layout?.widthMode === "full";
   const time = clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const weekday = clock.toLocaleDateString([], { weekday: "short" }).toUpperCase();
+  const dateLabel = clock.toLocaleDateString([], { day: "numeric", month: "short" });
   const pinned = useMemo(() => apps, [apps]);
+  const dividerClass = vertical
+    ? "my-1 h-px w-6 shrink-0 bg-white/[0.12]"
+    : "mx-1 h-6 w-px shrink-0 self-center bg-white/[0.12]";
 
   return (
     <div className={`flex h-full w-full ${EDGE_ALIGN[edge]}`}>
@@ -408,19 +424,20 @@ export default function DockWindow() {
       <div
         ref={pillRef}
         onPointerDown={onPillPointerDown}
-        className={`relative flex items-center gap-2 overflow-visible px-3 backdrop-blur-[28px] ${
+        className={`glacier-dock-glass relative flex items-center gap-1.5 overflow-visible px-2.5 ${
           draggingDock ? "ring-2 ring-[var(--glacier-accent)]" : ""
         }`}
         style={{
           height: "var(--glacier-bar-height)",
           width: full ? "100%" : undefined,
           borderRadius: attached ? 0 : "var(--glacier-radius)",
-          background: "var(--glacier-surface)",
-          boxShadow: attached ? "none" : "var(--glacier-shadow)",
+          boxShadow: attached ? "none" : undefined,
           flexDirection: vertical ? "column" : "row",
           cursor: draggingDock ? "grabbing" : "default",
         }}
       >
+        {!attached && edge === "bottom" && <span className="glacier-dock-sheen" aria-hidden />}
+
         <canvas
           ref={canvasRef}
           aria-hidden
@@ -431,73 +448,59 @@ export default function DockWindow() {
         <div
           ref={rowRef}
           className={`relative flex items-end gap-1.5 ${vertical ? "flex-col" : "flex-row"}`}
-          style={{ paddingBlock: vertical ? 6 : 0, paddingInline: vertical ? 0 : 4 }}
+          style={{ paddingBlock: vertical ? 6 : 0, paddingInline: vertical ? 0 : 2 }}
         >
-          {pinned.map((app) => (
-            <button
-              key={app.path}
-              data-icon
-              type="button"
-              draggable
-              onDragStart={() => (draggedApp.current = app)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                createFolder(app);
-              }}
-              onClick={() => launch(app)}
-              onPointerEnter={() => startPreview(app)}
-              onPointerLeave={endPreview}
-              title={app.name}
-              className="relative grid shrink-0 place-items-center rounded-[10px] transition-transform duration-150 active:scale-90"
-              style={{
-                width: "var(--glacier-icon-base)",
-                height: "var(--glacier-icon-base)",
-                transform:
-                  "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
-                transformOrigin: vertical ? "center left" : "center bottom",
-              }}
-            >
-              <AppIcon app={app} />
-              {running.includes(app.path) && (
-                <span
-                  className="absolute -bottom-1 h-[3px] w-4 rounded-full"
-                  style={{ background: "var(--glacier-accent)" }}
-                />
-              )}
-            </button>
-          ))}
-
-          {widgets.map((id) => {
-            const meta = widgetMeta(id);
-            if (!meta) return null;
+          {pinned.map((app) => {
+            const isRunning = running.includes(app.path);
+            const isBouncing = bouncingApp === app.path;
             return (
               <button
-                key={id}
+                key={app.path}
                 data-icon
-                data-no-drag
                 type="button"
-                title={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
-                onClick={() =>
-                  invoke("open_widget", {
-                    id,
-                    width: meta.width,
-                    height: meta.height,
-                  }).catch(() => {})
-                }
-                className="grid shrink-0 place-items-center rounded-[9px] bg-white/10 text-[12px] transition-transform duration-150 active:scale-90"
+                draggable
+                onDragStart={() => (draggedApp.current = app)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  createFolder(app);
+                }}
+                onClick={() => launch(app)}
+                onPointerEnter={() => startPreview(app)}
+                onPointerLeave={endPreview}
+                aria-label={app.name}
+                className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px] transition-transform duration-150 active:scale-90"
                 style={{
-                  width: "calc(var(--glacier-icon-base) * 0.72)",
-                  height: "calc(var(--glacier-icon-base) * 0.72)",
+                  width: "var(--glacier-icon-base)",
+                  height: "var(--glacier-icon-base)",
+                  transform:
+                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+                  transformOrigin: vertical ? "center left" : "center bottom",
                 }}
               >
-                {CATEGORY_META[meta.category].glyph}
+                {!vertical && <span className="glacier-dock-tip">{app.name}</span>}
+                <span
+                  className={`grid size-full place-items-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${
+                    isBouncing ? "glacier-launch-bounce" : ""
+                  }`}
+                >
+                  <AppIcon app={app} />
+                </span>
+                {isRunning && (
+                  <span
+                    className="absolute -bottom-1.5 h-[3px] w-3.5 rounded-full"
+                    style={{
+                      background: "var(--glacier-aurora-line)",
+                      boxShadow: "0 0 8px rgba(56, 189, 248, 0.65)",
+                    }}
+                  />
+                )}
               </button>
             );
           })}
 
           {folders.map((folder) => (
-            <div key={folder.id} data-icon>
+            <div key={folder.id} data-icon className="glacier-icon-glow relative">
               <AppFolderTile
                 name={folder.name}
                 color={folder.color}
@@ -527,88 +530,149 @@ export default function DockWindow() {
             </div>
           ))}
 
+          {(pinned.length > 0 || folders.length > 0) && <span className={dividerClass} aria-hidden />}
+
+          {widgets.map((id) => {
+            const meta = widgetMeta(id);
+            if (!meta) return null;
+            return (
+              <button
+                key={id}
+                data-icon
+                data-no-drag
+                type="button"
+                aria-label={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
+                onClick={() =>
+                  invoke("open_widget", {
+                    id,
+                    width: meta.width,
+                    height: meta.height,
+                  }).catch(() => {})
+                }
+                className={`group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center gap-1.5 transition-transform duration-150 active:scale-95 ${
+                  vertical ? "" : "px-2.5"
+                }`}
+                style={{
+                  height: "calc(var(--glacier-icon-base) * 0.9)",
+                  minWidth: "calc(var(--glacier-icon-base) * 0.9)",
+                  transform:
+                    "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
+                  transformOrigin: vertical ? "center left" : "center bottom",
+                }}
+              >
+                {!vertical && <span className="glacier-dock-tip">{meta.name}</span>}
+                <span className="text-[13px] leading-none">
+                  {CATEGORY_META[meta.category].glyph}
+                </span>
+                {!vertical && (
+                  <span className="max-w-[74px] truncate text-[11px] font-medium opacity-85">
+                    {meta.name}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
           <button
             data-icon
             data-no-drag
             type="button"
-            title="App Library"
+            aria-label="App Library"
             onClick={() => invoke("open_launcher").catch(() => {})}
-            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
-              width: "var(--glacier-icon-base)",
-              height: "var(--glacier-icon-base)",
+              width: "calc(var(--glacier-icon-base) * 0.92)",
+              height: "calc(var(--glacier-icon-base) * 0.92)",
               transform:
                 "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
               transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
-            ▦
+            {!vertical && <span className="glacier-dock-tip">App Library</span>}
+            <StartGridIcon />
           </button>
 
           <button
             data-icon
             data-no-drag
             type="button"
-            title="Glacier Activity Monitor"
+            aria-label="Glacier Activity Monitor"
             onClick={() => invoke("task_manager").catch(() => {})}
-            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
-              width: "var(--glacier-icon-base)",
-              height: "var(--glacier-icon-base)",
+              width: "calc(var(--glacier-icon-base) * 0.92)",
+              height: "calc(var(--glacier-icon-base) * 0.92)",
               transform:
                 "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
               transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
-            ▤
+            {!vertical && <span className="glacier-dock-tip">Activity Monitor</span>}
+            <ActivityMonitorIcon />
           </button>
 
           <button
             data-icon
             data-no-drag
             type="button"
-            title="Glacier Settings"
+            aria-label="Glacier Settings"
             onClick={() => invoke("open_settings").catch(() => {})}
-            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
-              width: "var(--glacier-icon-base)",
-              height: "var(--glacier-icon-base)",
+              width: "calc(var(--glacier-icon-base) * 0.92)",
+              height: "calc(var(--glacier-icon-base) * 0.92)",
               transform:
                 "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
               transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
-            ⚙
+            {!vertical && <span className="glacier-dock-tip">Settings</span>}
+            <SettingsGearIcon />
           </button>
 
           <button
             data-icon
             data-no-drag
             type="button"
-            title="Spotlight (Alt + Space)"
+            aria-label="Spotlight (Alt + Space)"
             onClick={() => invoke("open_spotlight").catch(() => {})}
-            className="grid shrink-0 place-items-center rounded-[10px] bg-white/10 text-sm transition-transform duration-150 active:scale-90"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center transition-transform duration-150 active:scale-90"
             style={{
-              width: "var(--glacier-icon-base)",
-              height: "var(--glacier-icon-base)",
+              width: "calc(var(--glacier-icon-base) * 0.92)",
+              height: "calc(var(--glacier-icon-base) * 0.92)",
               transform:
                 "translateY(calc(var(--icon-lift, 0px) * -1)) scale(var(--icon-scale, 1))",
               transformOrigin: vertical ? "center left" : "center bottom",
             }}
           >
-            ⌕
+            {!vertical && <span className="glacier-dock-tip">Spotlight (Alt + Space)</span>}
+            <SpotlightSearchIcon />
           </button>
         </div>
 
         {!vertical && (
-          <div data-no-drag className="relative ml-1 flex select-none flex-col leading-tight">
-            <span className="text-xs font-semibold tabular-nums opacity-90">{time}</span>
-            {profile && (
-              <span className="text-[8px] uppercase tracking-widest opacity-45">
-                {profile}
+          <>
+            <span className={dividerClass} aria-hidden />
+            <div
+              data-no-drag
+              className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5"
+            >
+              <div className="flex flex-col leading-none">
+                <span className="text-[9px] font-semibold tracking-wider opacity-55">
+                  {weekday}
+                </span>
+                <span className="mt-0.5 text-[11px] font-medium opacity-85">{dateLabel}</span>
+              </div>
+              <span className="text-[15px] font-semibold tabular-nums tracking-tight">
+                {time}
               </span>
-            )}
-          </div>
+              {profile && (
+                <span className="rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-widest opacity-70">
+                  {profile}
+                </span>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

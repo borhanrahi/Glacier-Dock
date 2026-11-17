@@ -55,7 +55,7 @@ export function GlacierIsland({ notification, onDismiss, onReply }: GlacierIslan
 
   return (
     <div
-      className="pointer-events-auto flex items-center gap-3 overflow-hidden transition-all duration-300"
+      className="glacier-dock-glass pointer-events-auto flex items-center gap-3 overflow-hidden transition-all duration-300"
       style={{
         maxWidth: visible ? 340 : 0,
         opacity: visible ? 1 : 0,
@@ -63,14 +63,15 @@ export function GlacierIsland({ notification, onDismiss, onReply }: GlacierIslan
         marginRight: visible ? 8 : 0,
         transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
         borderRadius: "var(--glacier-radius)",
-        background: "var(--glacier-elevated)",
-        boxShadow: "var(--glacier-shadow)",
         paddingInline: visible ? 10 : 0,
       }}
     >
       <span
-        className="grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-bold uppercase"
-        style={{ background: color, color: "#0b1220" }}
+        className="grid size-7 shrink-0 place-items-center rounded-full text-[10px] font-bold uppercase shadow-sm"
+        style={{
+          background: notification.color ?? "var(--glacier-aurora)",
+          color: "#0b1220",
+        }}
       >
         {label.slice(0, 2)}
       </span>

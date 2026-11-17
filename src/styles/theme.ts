@@ -30,8 +30,14 @@ export function applyPreset(name: string) {
   const preset = normalizePreset(name);
   root().dataset.glacierPreset = preset;
   const [r, g, b] = PRESET_BASE[preset];
-  const alpha = root().style.getPropertyValue("--glacier-tint-alpha") || "0.58";
+  const alpha = parseFloat(root().style.getPropertyValue("--glacier-tint-alpha") || "0.78");
+  const topA = Math.min(1, alpha * 0.92).toFixed(3);
+  const botA = Math.min(1, alpha * 1.12).toFixed(3);
   root().style.setProperty("--glacier-surface", `rgba(${r}, ${g}, ${b}, ${alpha})`);
+  root().style.setProperty(
+    "--glacier-dock-bg",
+    `linear-gradient(180deg, rgba(${r}, ${g}, ${b}, ${topA}) 0%, rgba(${r}, ${g}, ${b}, ${botA}) 100%)`,
+  );
 }
 
 export function applyTintAlpha(alpha: number) {
@@ -39,7 +45,13 @@ export function applyTintAlpha(alpha: number) {
   root().style.setProperty("--glacier-tint-alpha", String(clamped));
   const preset = normalizePreset(root().dataset.glacierPreset ?? "liquid-glass");
   const [r, g, b] = PRESET_BASE[preset];
+  const topA = Math.min(1, clamped * 0.92).toFixed(3);
+  const botA = Math.min(1, clamped * 1.12).toFixed(3);
   root().style.setProperty("--glacier-surface", `rgba(${r}, ${g}, ${b}, ${clamped})`);
+  root().style.setProperty(
+    "--glacier-dock-bg",
+    `linear-gradient(180deg, rgba(${r}, ${g}, ${b}, ${topA}) 0%, rgba(${r}, ${g}, ${b}, ${botA}) 100%)`,
+  );
 }
 
 export function applyAccent(hex: string) {

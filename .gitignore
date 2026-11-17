@@ -12,6 +12,10 @@ taskbar-state.txt
 # Local build blueprint / design spec, not part of the shipped project
 glacier_dock_master_architecture_*.md
 
+# Reference repositories
+opentaskbar/
+Muelle/
+
 .DS_Store
 Thumbs.db
 .idea/

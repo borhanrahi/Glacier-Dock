@@ -151,11 +151,14 @@ function Toggle({
         {hint && <span className="block text-[10px] leading-snug opacity-50">{hint}</span>}
       </span>
       <span
-        className="relative h-5 w-9 shrink-0 rounded-full transition-colors"
-        style={{ background: checked ? "var(--glacier-accent)" : "rgba(255,255,255,0.16)" }}
+        className="relative h-5 w-9 shrink-0 rounded-full transition-all duration-200"
+        style={{
+          background: checked ? "var(--glacier-aurora-line)" : "rgba(255,255,255,0.16)",
+          boxShadow: checked ? "0 0 10px rgba(56, 189, 248, 0.35)" : "none",
+        }}
       >
         <span
-          className="absolute top-0.5 size-4 rounded-full bg-white transition-[left]"
+          className="absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-[left] duration-200"
           style={{ left: checked ? 18 : 2 }}
         />
       </span>
@@ -304,33 +307,44 @@ export default function SettingsWindow() {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--glacier-elevated)] text-[var(--glacier-text)]">
-      <aside className="flex w-52 shrink-0 flex-col border-r border-[var(--glacier-border)] bg-black/20 p-3">
-        <div data-tauri-drag-region className="mb-4 flex items-center gap-2 px-1 py-2">
-          <span className="grid size-7 place-items-center rounded-lg bg-[var(--glacier-accent)]/25 text-sm">
+    <div className="glacier-dock-glass relative flex h-screen w-screen overflow-hidden text-[var(--glacier-text)]">
+      <span className="glacier-dock-sheen" aria-hidden />
+      <aside className="flex w-52 shrink-0 flex-col border-r border-[var(--glacier-border)] bg-black/25 p-3">
+        <div data-tauri-drag-region className="mb-4 flex items-center gap-2.5 px-1 py-2">
+          <span
+            className="grid size-7 place-items-center rounded-lg text-sm font-bold text-[#08111d] shadow-sm"
+            style={{ background: "var(--glacier-aurora)" }}
+          >
             ❄
           </span>
           <div>
             <div className="text-[12px] font-semibold leading-none">Glacier Dock</div>
-            <div className="text-[9px] uppercase tracking-widest opacity-40">Settings</div>
+            <div className="mt-0.5 text-[9px] uppercase tracking-widest opacity-45">Settings</div>
           </div>
         </div>
         <nav className="flex-1 space-y-0.5">
-          {TABS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => setTab(entry.id)}
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-colors ${
-                tab === entry.id
-                  ? "bg-[var(--glacier-accent)]/20 font-semibold"
-                  : "hover:bg-white/10"
-              }`}
-            >
-              <span className="w-4 text-center opacity-60">{entry.glyph}</span>
-              {entry.label}
-            </button>
-          ))}
+          {TABS.map((entry) => {
+            const active = tab === entry.id;
+            return (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => setTab(entry.id)}
+                className={`relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-colors ${
+                  active ? "bg-white/[0.09] font-semibold" : "opacity-80 hover:bg-white/[0.06] hover:opacity-100"
+                }`}
+              >
+                {active && (
+                  <span
+                    className="absolute left-0.5 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full"
+                    style={{ background: "var(--glacier-aurora)" }}
+                  />
+                )}
+                <span className="w-4 text-center opacity-70">{entry.glyph}</span>
+                {entry.label}
+              </button>
+            );
+          })}
         </nav>
         <div className="mt-2 rounded-lg bg-white/5 p-2 text-[9px] leading-snug opacity-60">
           Everything is stored locally in {`%APPDATA%\\GlacierDock`}. No telemetry leaves this
@@ -430,6 +444,34 @@ function AppearanceTab({
   const appearance = cfg.appearance;
   return (
     <>
+      <Section title="Live preview" hint={`${appearance.preset} · ${Math.round(appearance.tintAlpha * 100)}% tint`}>
+        <div
+          className="relative flex h-24 items-end justify-center overflow-hidden rounded-xl border border-[var(--glacier-border)] pb-2.5"
+          style={{
+            background:
+              "radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.25), transparent 55%), radial-gradient(circle at 80% 30%, rgba(94, 234, 212, 0.22), transparent 50%), linear-gradient(180deg, #0b1322 0%, #111f33 100%)",
+          }}
+        >
+          <div className="glacier-dock-glass relative flex items-center gap-2 rounded-2xl px-3 py-1.5">
+            <span className="glacier-dock-sheen" aria-hidden />
+            {["#38BDF8", "#5EEAD4", "#818CF8", "#F472B6"].map((bg, idx) => (
+              <span key={bg} className="relative grid size-7 place-items-center rounded-lg shadow-sm" style={{ background: bg }}>
+                {idx === 0 && (
+                  <span
+                    className="absolute -bottom-1 h-[2.5px] w-3 rounded-full"
+                    style={{ background: "var(--glacier-aurora-line)" }}
+                  />
+                )}
+              </span>
+            ))}
+            <span className="mx-0.5 h-5 w-px bg-white/15" />
+            <span className="glacier-widget-pill px-2 py-1 text-[10px] font-semibold tabular-nums">
+              14:32
+            </span>
+          </div>
+        </div>
+      </Section>
+
       <Section title="Preset" hint="Applies to every window">
         <div className="grid grid-cols-5 gap-2">
           {PRESETS.map((preset) => (

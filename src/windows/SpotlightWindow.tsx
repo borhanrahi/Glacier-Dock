@@ -125,10 +125,8 @@ export default function SpotlightWindow() {
 
   return (
     <div className="grid h-full w-full place-items-start p-2">
-      <div
-        className="w-full overflow-hidden rounded-2xl backdrop-blur-2xl"
-        style={{ background: "var(--glacier-elevated)", boxShadow: "var(--glacier-shadow)" }}
-      >
+      <div className="glacier-dock-glass relative w-full overflow-hidden rounded-[18px]">
+        <span className="glacier-dock-sheen" aria-hidden />
         <div className="flex items-center gap-2 px-3 py-2.5">
           <span className="text-sm opacity-60">⌕</span>
           <input

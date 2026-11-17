@@ -3,16 +3,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { AppFolderTile } from "../components/AppFolderTile";
+import { DockContextMenu } from "../components/DockContextMenu";
 import {
   ActivityMonitorIcon,
   SettingsGearIcon,
   SpotlightSearchIcon,
   StartGridIcon,
 } from "../components/DockIcons";
+import { DockRingMeter } from "../components/DockRingMeter";
 import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
 import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
 import { attachFisheye } from "../sdk/fisheye";
-import { useAppIcon } from "../sdk/hooks";
+import { useAppIcon, useTelemetry } from "../sdk/hooks";
 import { LiquidRefraction } from "../styles/liquid-refraction";
 import {
   applyAccent,
@@ -116,6 +118,8 @@ export default function DockWindow() {
   const [widgets, setWidgets] = useState<string[]>([]);
   const [clock, setClock] = useState(() => new Date());
   const [bouncingApp, setBouncingApp] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ app: InstalledApp; x: number } | null>(null);
+  const telemetry = useTelemetry();
   const hoverTimer = useRef<number | undefined>(undefined);
   const bounceTimer = useRef<number | undefined>(undefined);
 
@@ -375,6 +379,19 @@ export default function DockWindow() {
     return () => window.removeEventListener("pointerup", onUp);
   }, [draggingDock]);
 
+  const togglePinApp = useCallback(async (target: InstalledApp) => {
+    setApps((current) => {
+      const exists = current.some((item) => item.path === target.path);
+      const next = exists
+        ? current.filter((item) => item.path !== target.path)
+        : [...current, target];
+      invoke("set_pinned_apps", {
+        apps: next.map((item) => ({ name: item.name, path: item.path })),
+      }).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const createFolder = (target: InstalledApp) => {
     const source = draggedApp.current;
     draggedApp.current = null;
@@ -466,6 +483,11 @@ export default function DockWindow() {
                   createFolder(app);
                 }}
                 onClick={() => launch(app)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  endPreview();
+                  setContextMenu({ app, x: event.clientX });
+                }}
                 onPointerEnter={() => startPreview(app)}
                 onPointerLeave={endPreview}
                 aria-label={app.name}
@@ -653,28 +675,66 @@ export default function DockWindow() {
         {!vertical && (
           <>
             <span className={dividerClass} aria-hidden />
-            <div
-              data-no-drag
-              className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5"
-            >
-              <div className="flex flex-col leading-none">
-                <span className="text-[9px] font-semibold tracking-wider opacity-55">
-                  {weekday}
-                </span>
-                <span className="mt-0.5 text-[11px] font-medium opacity-85">{dateLabel}</span>
-              </div>
-              <span className="text-[15px] font-semibold tabular-nums tracking-tight">
-                {time}
-              </span>
-              {profile && (
-                <span className="rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-widest opacity-70">
-                  {profile}
-                </span>
+            <div data-no-drag className="relative flex items-center gap-1.5">
+              <DockRingMeter
+                label="CPU"
+                value={telemetry.cpuPercent}
+                tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
+                onClick={() => invoke("task_manager").catch(() => {})}
+              />
+              <DockRingMeter
+                label="RAM"
+                value={telemetry.ramPercent}
+                tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
+                onClick={() => invoke("task_manager").catch(() => {})}
+              />
+              {telemetry.gpuPercent !== null && (
+                <DockRingMeter
+                  label="GPU"
+                  value={telemetry.gpuPercent}
+                  tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
+                  onClick={() => invoke("task_manager").catch(() => {})}
+                />
               )}
+              {telemetry.batteryPercent !== null && (
+                <DockRingMeter
+                  label="BAT"
+                  value={telemetry.batteryPercent}
+                  charging={telemetry.batteryCharging}
+                  tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
+                />
+              )}
+              <div className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5">
+                <div className="flex flex-col leading-none">
+                  <span className="text-[9px] font-semibold tracking-wider opacity-55">
+                    {weekday}
+                  </span>
+                  <span className="mt-0.5 text-[11px] font-medium opacity-85">{dateLabel}</span>
+                </div>
+                <span className="text-[15px] font-semibold tabular-nums tracking-tight">
+                  {time}
+                </span>
+                {profile && (
+                  <span className="rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-widest opacity-70">
+                    {profile}
+                  </span>
+                )}
+              </div>
             </div>
           </>
         )}
       </div>
+
+      {contextMenu && (
+        <DockContextMenu
+          app={contextMenu.app}
+          pinned={pinned.some((item) => item.path === contextMenu.app.path)}
+          anchorX={contextMenu.x}
+          onClose={() => setContextMenu(null)}
+          onLaunch={launch}
+          onTogglePin={togglePinApp}
+        />
+      )}
     </div>
   );
 }

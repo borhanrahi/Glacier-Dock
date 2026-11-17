@@ -151,13 +151,19 @@ export function WidgetFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="flex h-full w-full flex-col gap-2 rounded-2xl border border-[var(--glacier-border)] bg-[var(--glacier-surface)] p-3 text-[var(--glacier-text)] shadow-[var(--glacier-specular)]">
-      <header className="flex items-center justify-between gap-2">
+    <div className="glacier-dock-glass relative flex h-full w-full flex-col gap-2 overflow-hidden rounded-2xl p-3 text-[var(--glacier-text)]">
+      <span className="glacier-dock-sheen" aria-hidden />
+      <header className="relative flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--glacier-text-muted)]">
           {title}
         </span>
         <span className="flex items-center gap-1.5">
-          {live && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />}
+          {live && (
+            <span
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#2DD4BF]"
+              style={{ boxShadow: "0 0 8px rgba(45, 212, 191, 0.75)" }}
+            />
+          )}
           {hint && (
             <span className="max-w-[9rem] truncate text-[10px] text-[var(--glacier-text-muted)]">
               {hint}
@@ -165,7 +171,7 @@ export function WidgetFrame({
           )}
         </span>
       </header>
-      <div className="min-h-0 flex-1">{children}</div>
+      <div className="relative min-h-0 flex-1">{children}</div>
     </div>
   );
 }

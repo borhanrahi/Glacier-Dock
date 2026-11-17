@@ -175,10 +175,8 @@ export default function TaskManagerWindow() {
     snapshot.totalRam > 0 ? (snapshot.usedRam / snapshot.totalRam) * 100 : 0;
 
   return (
-    <div
-      className="flex h-full w-full flex-col overflow-hidden rounded-2xl backdrop-blur-2xl"
-      style={{ background: "var(--glacier-elevated)", boxShadow: "var(--glacier-shadow)" }}
-    >
+    <div className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px]">
+      <span className="glacier-dock-sheen" aria-hidden />
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
         <span className="text-xs font-semibold tracking-wide">Glacier Activity Monitor</span>
         <nav className="ml-3 flex gap-1">
@@ -187,9 +185,9 @@ export default function TaskManagerWindow() {
               key={entry}
               type="button"
               onClick={() => setTab(entry)}
-              className="rounded-full px-2.5 py-1 text-[10px]"
+              className="rounded-full px-2.5 py-1 text-[10px] transition-colors"
               style={{
-                background: entry === tab ? "var(--glacier-accent)" : "rgba(255,255,255,0.08)",
+                background: entry === tab ? "var(--glacier-aurora-line)" : "rgba(255,255,255,0.08)",
                 color: entry === tab ? "#08111d" : "inherit",
                 fontWeight: entry === tab ? 600 : 400,
               }}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, type MotionValue } from "motion/react";
 
-import { MAC_MODAL_SPRING } from "../sdk/motion";
+import { MAC_POPOVER_SPRING } from "../sdk/motion";
 import { MotionDockItem } from "./MotionDockItem";
 
 export interface AiQuotaWindow {
@@ -44,14 +44,23 @@ export function AiUsageIsland({
   mouseAxis,
   baseSize,
   maxScale,
+  onOpenChange,
 }: {
   vertical?: boolean;
   mouseAxis: MotionValue<number>;
   baseSize: number;
   maxScale: number;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [providers, setProviders] = useState<AiProviderUsage[]>([]);
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+    return () => {
+      if (open) onOpenChange?.(false);
+    };
+  }, [open, onOpenChange]);
 
   const refresh = useCallback(() => {
     invoke<AiProviderUsage[]>("ai_usage_snapshot")
@@ -74,11 +83,10 @@ export function AiUsageIsland({
     <div data-no-drag className="relative">
       <MotionDockItem
         mouseAxis={mouseAxis}
-        baseSize={Math.round(baseSize * 0.9)}
+        baseSize={baseSize}
         maxScale={maxScale}
         variant="pill"
         vertical={vertical}
-        lift={5}
         tip="AI Plan Usage"
         ariaLabel="AI Plan Usage"
         noDrag
@@ -89,7 +97,7 @@ export function AiUsageIsland({
             setOpen((v) => !v),
           );
         }}
-        className="group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center gap-2 px-2.5 text-[11px] will-change-transform"
+        className="group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center text-[11px]"
       >
         {ready.map((provider, idx) => {
           const primary = provider.windows[0];
@@ -132,8 +140,8 @@ export function AiUsageIsland({
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.94 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.96 }}
-            transition={MAC_MODAL_SPRING}
+            exit={{ opacity: 0, y: 6, scale: 0.96, transition: { duration: 0.1 } }}
+            transition={MAC_POPOVER_SPRING}
             className="glacier-dock-glass absolute bottom-[calc(100%+12px)] right-0 z-50 w-64 overflow-hidden rounded-[14px] p-3 text-[11px] will-change-transform"
           >
           <span className="glacier-dock-sheen" aria-hidden />

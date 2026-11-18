@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, type MotionValue } from "motion/react";
 
-import { MAC_MODAL_SPRING } from "../sdk/motion";
-import { MotionDockItem } from "./MotionDockItem";
+import { MAC_POPOVER_SPRING } from "../sdk/motion";
+import { MotionDockItem, type DockEdge } from "./MotionDockItem";
 import {
   FOLDER_COLORS,
   appHue,
@@ -22,6 +22,8 @@ export interface AppFolderTileProps {
   onColor: (color: string) => void;
   onRemoveApp: (path: string) => void;
   onAddApp?: () => void;
+  onOpenChange?: (open: boolean) => void;
+  edge?: DockEdge;
   vertical?: boolean;
 }
 
@@ -42,6 +44,8 @@ export function AppFolderTile({
   onColor,
   onRemoveApp,
   onAddApp,
+  onOpenChange,
+  edge,
   vertical = false,
 }: AppFolderTileProps) {
   const [open, setOpen] = useState(false);
@@ -50,6 +54,13 @@ export function AppFolderTile({
   const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setDraft(name), [name]);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+    return () => {
+      if (open) onOpenChange?.(false);
+    };
+  }, [open, onOpenChange]);
 
   useEffect(() => {
     if (!open) return;
@@ -70,17 +81,19 @@ export function AppFolderTile({
         mouseAxis={mouseAxis}
         baseSize={baseSize}
         maxScale={maxScale}
+        edge={edge}
         vertical={vertical}
+        iconRatio={0.76}
         tip={name}
         ariaLabel={name}
         onClick={() => setOpen((value) => !value)}
-        className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-xl will-change-transform"
+        className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-xl"
         style={{
           background: `${color}22`,
           boxShadow: `inset 0 0 0 1px ${color}`,
         }}
       >
-        <span className="grid size-[74%] grid-cols-2 gap-0.5">
+        <span className="grid size-full grid-cols-2 gap-0.5">
           {Array.from({ length: 4 }).map((_, index) => {
             const app = preview[index];
             return (
@@ -107,9 +120,9 @@ export function AppFolderTile({
             ref={popoverRef}
             initial={{ opacity: 0, y: 10, scale: 0.94 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.96 }}
-            transition={MAC_MODAL_SPRING}
-            className="absolute z-50 w-64 rounded-2xl p-3 backdrop-blur-2xl will-change-transform"
+            exit={{ opacity: 0, y: 6, scale: 0.96, transition: { duration: 0.1 } }}
+            transition={MAC_POPOVER_SPRING}
+            className="absolute z-50 w-64 rounded-2xl p-3 backdrop-blur-md will-change-transform"
             style={{
               background: "var(--glacier-elevated)",
               boxShadow: "var(--glacier-shadow)",

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useMotionValue } from "motion/react";
+import { AnimatePresence, useMotionValue } from "motion/react";
 
 import { AiUsageIsland } from "../components/AiUsageIsland";
 import { AppFolderTile } from "../components/AppFolderTile";
@@ -18,7 +18,7 @@ import {
 import { DockRingMeter } from "../components/DockRingMeter";
 import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
 import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
-import { MotionDockItem } from "../components/MotionDockItem";
+import { MotionDockItem, type DockEdge } from "../components/MotionDockItem";
 import { useAppIcon, useTelemetry } from "../sdk/hooks";
 import {
   applyAccent,
@@ -96,7 +96,7 @@ function AppIcon({ app }: { app: InstalledApp }) {
         src={icon}
         alt=""
         draggable={false}
-        className="size-full select-none object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]"
+        className="size-full select-none object-contain"
       />
     );
   }
@@ -131,7 +131,7 @@ export default function DockWindow() {
   const [draggingDock, setDraggingDock] = useState(false);
   const [profile, setProfile] = useState<string | null>(null);
   const [widgets, setWidgets] = useState<string[]>([]);
-  const [magnification, setMagnification] = useState(1.36);
+  const [magnification, setMagnification] = useState(1.8);
   const [iconPlate, setIconPlate] = useState("none");
   const [showTelemetryRings, setShowTelemetryRings] = useState(true);
   const [showAiUsage, setShowAiUsage] = useState(true);
@@ -140,9 +140,19 @@ export default function DockWindow() {
   const [bouncingApp, setBouncingApp] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ app: InstalledApp; x: number } | null>(null);
   const [surfaceMenuX, setSurfaceMenuX] = useState<number | null>(null);
+  const [dockHovered, setDockHovered] = useState(false);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const telemetry = useTelemetry();
   const hoverTimer = useRef<number | undefined>(undefined);
   const bounceTimer = useRef<number | undefined>(undefined);
+  const pointerRafRef = useRef<number | null>(null);
+  const pendingPointerRef = useRef<number | null>(null);
+  const restRectRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const lastReportedPillRef = useRef({ x: -1, y: -1, w: -1, h: -1 });
+  const wasHoveredRef = useRef(false);
+  const wasHitHoveredRef = useRef(false);
+  const overlayOpenRef = useRef(false);
   const mouseAxis = useMotionValue(Number.POSITIVE_INFINITY);
 
   useEffect(() => {
@@ -189,7 +199,7 @@ export default function DockWindow() {
         applyPreset(next.highContrast ? "black" : cfg.appearance.preset);
         applyTintAlpha(cfg.appearance.tintAlpha);
         setWidgets(cfg.dockWidgets ?? []);
-        setMagnification(cfg.appearance.magnification ?? 1.36);
+        setMagnification(cfg.appearance.magnification ?? 1.8);
         setIconPlate(cfg.appearance.iconPlate ?? "none");
         setShowTelemetryRings(cfg.showTelemetryRings ?? true);
         setShowAiUsage(cfg.showAiUsage ?? true);
@@ -319,59 +329,223 @@ export default function DockWindow() {
       applyPreset(layout?.highContrast ? "black" : cfg.appearance.preset);
       applyTintAlpha(cfg.appearance.tintAlpha);
       setWidgets(cfg.dockWidgets ?? []);
-      setMagnification(cfg.appearance.magnification ?? 1.36);
+      setMagnification(cfg.appearance.magnification ?? 1.8);
       setIconPlate(cfg.appearance.iconPlate ?? "none");
       setShowTelemetryRings(cfg.showTelemetryRings ?? true);
       setShowAiUsage(cfg.showAiUsage ?? true);
       setShowQuickFolders(cfg.showQuickFolders ?? true);
+      invoke<DockLayout>("dock_layout")
+        .then((next) => {
+          setLayout(next);
+          applyDockMetrics({
+            iconSize: next.iconSize,
+            barHeight: next.barHeight,
+            radius: next.shape === "attached" ? 0 : 18,
+            edgeMargin: next.shape === "attached" ? 0 : 10,
+          });
+        })
+        .catch(() => {});
     })
       .then((fn) => (unlisten = fn))
       .catch(() => {});
     return () => unlisten?.();
   }, [layout]);
 
-  // Report the pill rect (throttled): WM_NCHITTEST headroom + DXGI capture region.
+  const edge: DockEdge = layout?.edge ?? "bottom";
+  const vertical = edge === "left" || edge === "right";
+  const attached = layout?.shape === "attached";
+  const full = layout?.widthMode === "full";
+  const barHeight = layout?.barHeight ?? 52;
+  const baseIconSize = layout?.iconSize ?? 42;
+  const crossPad = Math.max(4, Math.round((barHeight - baseIconSize) / 2));
+  const maxMag = magnification;
+  const maxGrowPx =
+    maxMag > 1.01 ? Math.ceil(baseIconSize * (Math.min(2.05, maxMag) - 1)) + 16 : 8;
+
+  const pinned = useMemo(() => {
+    const pinnedLower = new Set(apps.map((a) => a.path.toLowerCase()));
+    const extra = transientApps.filter((a) => !pinnedLower.has(a.path.toLowerCase()));
+    return [...apps, ...extra];
+  }, [apps, transientApps]);
+
+  const overlayOpen =
+    contextMenu !== null ||
+    surfaceMenuX !== null ||
+    (shelfOpen && shelf.length > 0) ||
+    island !== null ||
+    folderOpen ||
+    aiOpen;
+  overlayOpenRef.current = overlayOpen;
+
+  const clearDockHover = useCallback(() => {
+    if (pointerRafRef.current !== null) {
+      cancelAnimationFrame(pointerRafRef.current);
+      pointerRafRef.current = null;
+    }
+    pendingPointerRef.current = null;
+    mouseAxis.set(Number.POSITIVE_INFINITY);
+    setDockHovered(false);
+  }, [mouseAxis]);
+
+  const onPillPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!dockHovered) setDockHovered(true);
+      pendingPointerRef.current = vertical ? event.clientY : event.clientX;
+      if (pointerRafRef.current !== null) return;
+      pointerRafRef.current = requestAnimationFrame(() => {
+        pointerRafRef.current = null;
+        if (pendingPointerRef.current !== null) {
+          mouseAxis.set(pendingPointerRef.current);
+        }
+      });
+    },
+    [dockHovered, vertical, mouseAxis],
+  );
+
   useEffect(() => {
+    window.addEventListener("blur", clearDockHover);
+    return () => {
+      window.removeEventListener("blur", clearDockHover);
+      if (pointerRafRef.current !== null) cancelAnimationFrame(pointerRafRef.current);
+    };
+  }, [clearDockHover]);
+
+  // Report resting pill rect only when settled (never during hover magnification).
+  useEffect(() => {
+    if (dockHovered) {
+      wasHoveredRef.current = true;
+      return;
+    }
     const pill = pillRef.current;
     if (!pill) return;
-    let pending: number | undefined;
-    let last = { x: -1, y: -1, w: -1, h: -1 };
-    const reportNow = () => {
-      pending = undefined;
+    let rafId: number | undefined;
+    let settleTimer: number | undefined;
+
+    const measureAndReport = () => {
       const rect = pill.getBoundingClientRect();
+      restRectRef.current = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      const prev = lastReportedPillRef.current;
       if (
-        Math.abs(rect.x - last.x) < 2 &&
-        Math.abs(rect.y - last.y) < 2 &&
-        Math.abs(rect.width - last.w) < 2 &&
-        Math.abs(rect.height - last.h) < 2
+        Math.abs(rect.x - prev.x) < 2 &&
+        Math.abs(rect.y - prev.y) < 2 &&
+        Math.abs(rect.width - prev.w) < 2 &&
+        Math.abs(rect.height - prev.h) < 2
       ) {
         return;
       }
-      last = { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
+      lastReportedPillRef.current = { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
       invoke("set_pill_rect", {
         x: rect.x,
         y: rect.y,
         width: rect.width,
         height: rect.height,
       }).catch(() => {});
+      if (overlayOpenRef.current) {
+        invoke("set_hit_rect", {
+          x: 0,
+          y: 0,
+          width: window.innerWidth,
+          height: window.innerHeight,
+        }).catch(() => {});
+      }
     };
-    const schedule = () => {
-      if (pending !== undefined) return;
-      pending = window.setTimeout(reportNow, 64);
+
+    const scheduleMeasure = () => {
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = undefined;
+        measureAndReport();
+      });
     };
-    reportNow();
-    const observer = new ResizeObserver(schedule);
-    observer.observe(pill);
-    window.addEventListener("resize", schedule);
+
+    if (wasHoveredRef.current) {
+      wasHoveredRef.current = false;
+      settleTimer = window.setTimeout(scheduleMeasure, 220);
+    } else {
+      scheduleMeasure();
+    }
+
+    window.addEventListener("resize", scheduleMeasure);
     return () => {
-      if (pending !== undefined) window.clearTimeout(pending);
-      observer.disconnect();
-      window.removeEventListener("resize", schedule);
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
+      if (settleTimer !== undefined) window.clearTimeout(settleTimer);
+      window.removeEventListener("resize", scheduleMeasure);
     };
-  }, [layout, apps, folders, widgets, showTelemetryRings, showAiUsage, showQuickFolders]);
+  }, [
+    dockHovered,
+    layout,
+    pinned.length,
+    folders.length,
+    widgets.length,
+    showTelemetryRings,
+    showAiUsage,
+    showQuickFolders,
+  ]);
+
+  // Decoupled interactive hit-rect for hover magnification, tooltips, and popovers.
+  useEffect(() => {
+    let timer: number | undefined;
+    const clampHit = (x1: number, y1: number, x2: number, y2: number) => {
+      const cx1 = Math.max(0, Math.floor(x1));
+      const cy1 = Math.max(0, Math.floor(y1));
+      const cx2 = Math.min(window.innerWidth, Math.ceil(x2));
+      const cy2 = Math.min(window.innerHeight, Math.ceil(y2));
+      invoke("set_hit_rect", {
+        x: cx1,
+        y: cy1,
+        width: Math.max(1, cx2 - cx1),
+        height: Math.max(1, cy2 - cy1),
+      }).catch(() => {});
+    };
+
+    if (overlayOpen) {
+      wasHitHoveredRef.current = false;
+      clampHit(0, 0, window.innerWidth, window.innerHeight);
+      return;
+    }
+
+    const applyHoverOrRestHit = () => {
+      const rect =
+        restRectRef.current.width > 0
+          ? restRectRef.current
+          : pillRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
+
+      if (dockHovered) {
+        const headPad = maxGrowPx + 36;
+        const mainPad = Math.ceil(baseIconSize * 2.2);
+        if (edge === "bottom") {
+          clampHit(rect.x - mainPad, rect.y - headPad, rect.x + rect.width + mainPad, rect.y + rect.height + 6);
+        } else if (edge === "top") {
+          clampHit(rect.x - mainPad, rect.y - 6, rect.x + rect.width + mainPad, rect.y + rect.height + headPad);
+        } else if (edge === "left") {
+          clampHit(rect.x - 6, rect.y - mainPad, rect.x + rect.width + headPad, rect.y + rect.height + mainPad);
+        } else {
+          clampHit(rect.x - headPad, rect.y - mainPad, rect.x + rect.width + 6, rect.y + rect.height + mainPad);
+        }
+      } else {
+        clampHit(rect.x - 4, rect.y - 4, rect.x + rect.width + 4, rect.y + rect.height + 4);
+      }
+    };
+
+    if (dockHovered) {
+      wasHitHoveredRef.current = true;
+      applyHoverOrRestHit();
+    } else if (wasHitHoveredRef.current) {
+      wasHitHoveredRef.current = false;
+      timer = window.setTimeout(applyHoverOrRestHit, 200);
+    } else {
+      timer = window.setTimeout(applyHoverOrRestHit, 32);
+    }
+
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [dockHovered, overlayOpen, edge, maxGrowPx, baseIconSize, layout]);
 
   const openCommand = useCallback(
     (cmd: string, args?: Record<string, unknown>, el?: HTMLElement | null) => {
+      clearDockHover();
       window.clearTimeout(hoverTimer.current);
       invoke("hide_app_preview").catch(() => {});
       const payload = el ? { ...args, x: anchorX(el) } : args;
@@ -385,30 +559,34 @@ export default function DockWindow() {
         });
       });
     },
-    [],
+    [clearDockHover],
   );
 
-  const launch = useCallback(async (app: InstalledApp) => {
-    window.clearTimeout(hoverTimer.current);
-    invoke("hide_app_preview").catch(() => {});
-    setBouncingApp(app.path);
-    window.clearTimeout(bounceTimer.current);
-    bounceTimer.current = window.setTimeout(() => setBouncingApp(null), 440);
-    try {
-      await invoke("launch_app", { path: app.path });
-      setRunning((current) => (current.includes(app.path) ? current : [...current, app.path]));
-    } catch (error) {
-      // Never fail silently: the tile lights up only when the shell really
-      // handed off to the app, and a failure explains itself in the island.
-      setIsland({
-        id: `launch-${Date.now()}`,
-        app: "Glacier Dock",
-        title: `Could not open ${app.name}`,
-        body: error instanceof Error ? error.message : String(error),
-        kind: "message",
-      });
-    }
-  }, []);
+  const launch = useCallback(
+    async (app: InstalledApp) => {
+      clearDockHover();
+      window.clearTimeout(hoverTimer.current);
+      invoke("hide_app_preview").catch(() => {});
+      setBouncingApp(app.path);
+      window.clearTimeout(bounceTimer.current);
+      bounceTimer.current = window.setTimeout(() => setBouncingApp(null), 440);
+      try {
+        await invoke("launch_app", { path: app.path });
+        setRunning((current) => (current.includes(app.path) ? current : [...current, app.path]));
+      } catch (error) {
+        // Never fail silently: the tile lights up only when the shell really
+        // handed off to the app, and a failure explains itself in the island.
+        setIsland({
+          id: `launch-${Date.now()}`,
+          app: "Glacier Dock",
+          title: `Could not open ${app.name}`,
+          body: error instanceof Error ? error.message : String(error),
+          kind: "message",
+        });
+      }
+    },
+    [clearDockHover],
+  );
 
   // Drag the dock body to another screen edge.
   const onPillPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -440,24 +618,34 @@ export default function DockWindow() {
     });
   }, []);
 
-  const edge = layout?.edge ?? "bottom";
-  const vertical = edge === "left" || edge === "right";
-  const attached = layout?.shape === "attached";
-  const full = layout?.widthMode === "full";
   const time = clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const weekday = clock.toLocaleDateString([], { weekday: "short" }).toUpperCase();
   const dateLabel = clock.toLocaleDateString([], { day: "numeric", month: "short" });
-  const pinned = useMemo(() => {
-    const pinnedLower = new Set(apps.map((a) => a.path.toLowerCase()));
-    const extra = transientApps.filter((a) => !pinnedLower.has(a.path.toLowerCase()));
-    return [...apps, ...extra];
-  }, [apps, transientApps]);
-  const baseIconSize = layout?.iconSize ?? 42;
-  const utilSize = Math.round(baseIconSize * 0.9);
-  const maxMag = magnification;
+  const dockCrossAlign = edge === "top" || edge === "left" ? "items-start" : "items-end";
+  const pillStyle: CSSProperties = {
+    borderRadius: attached ? 0 : "var(--glacier-radius)",
+    boxShadow: attached ? "none" : undefined,
+    flexDirection: vertical ? "column" : "row",
+    cursor: draggingDock ? "grabbing" : "default",
+    ...(vertical
+      ? {
+          width: barHeight,
+          height: full ? "100%" : undefined,
+          paddingLeft: edge === "left" ? crossPad : 0,
+          paddingRight: edge === "right" ? crossPad : 0,
+          paddingBlock: 10,
+        }
+      : {
+          height: barHeight,
+          width: full ? "100%" : undefined,
+          paddingBottom: edge === "bottom" ? crossPad : 0,
+          paddingTop: edge === "top" ? crossPad : 0,
+          paddingInline: 10,
+        }),
+  };
   const dividerClass = vertical
-    ? "my-1 h-px w-6 shrink-0 bg-white/[0.12]"
-    : "mx-1 h-6 w-px shrink-0 self-center bg-white/[0.12]";
+    ? "relative z-10 my-1 h-px w-6 shrink-0 self-center bg-white/[0.12]"
+    : "relative z-10 mx-1 h-6 w-px shrink-0 self-center bg-white/[0.12]";
 
   const inlineWidgetLabel = (id: string, fallback: string): string => {
     switch (id) {
@@ -498,8 +686,8 @@ export default function DockWindow() {
 
       <div
         ref={pillRef}
-        onPointerMove={(event) => mouseAxis.set(vertical ? event.clientY : event.clientX)}
-        onPointerLeave={() => mouseAxis.set(Number.POSITIVE_INFINITY)}
+        onPointerMove={onPillPointerMove}
+        onPointerLeave={clearDockHover}
         onPointerDown={onPillPointerDown}
         onContextMenu={(event) => {
           const target = event.target as HTMLElement;
@@ -507,26 +695,34 @@ export default function DockWindow() {
           event.preventDefault();
           invoke("show_dock_menu").catch(() => setSurfaceMenuX(event.clientX));
         }}
-        className={`glacier-dock-glass relative flex items-center gap-1.5 overflow-visible px-2.5 ${
+        className={`glacier-dock-glass relative flex ${dockCrossAlign} gap-2 overflow-visible ${
           draggingDock ? "ring-2 ring-[var(--glacier-accent)]" : ""
         }`}
-        style={{
-          height: "var(--glacier-bar-height)",
-          width: full ? "100%" : undefined,
-          borderRadius: attached ? 0 : "var(--glacier-radius)",
-          boxShadow: attached ? "none" : undefined,
-          flexDirection: vertical ? "column" : "row",
-          cursor: draggingDock ? "grabbing" : "default",
-        }}
+        style={pillStyle}
       >
+        {dockHovered && (
+          <span
+            aria-hidden
+            data-no-drag
+            className="pointer-events-auto absolute z-0"
+            style={
+              edge === "bottom"
+                ? { top: -maxGrowPx, left: -16, right: -16, height: maxGrowPx + barHeight }
+                : edge === "top"
+                  ? { bottom: -maxGrowPx, left: -16, right: -16, height: maxGrowPx + barHeight }
+                  : edge === "left"
+                    ? { right: -maxGrowPx, top: -16, bottom: -16, width: maxGrowPx + barHeight }
+                    : { left: -maxGrowPx, top: -16, bottom: -16, width: maxGrowPx + barHeight }
+            }
+          />
+        )}
         {!attached && edge === "bottom" && <span className="glacier-dock-sheen" aria-hidden />}
 
         <div
           ref={rowRef}
-          className={`relative flex items-end gap-1.5 overflow-visible ${
+          className={`relative z-10 flex ${dockCrossAlign} gap-2 overflow-visible ${
             vertical ? "flex-col" : "flex-row"
           }`}
-          style={{ paddingBlock: vertical ? 6 : 0, paddingInline: vertical ? 0 : 2 }}
         >
           {pinned.map((app) => {
             const isRunning = running.includes(app.path.toLowerCase());
@@ -539,8 +735,10 @@ export default function DockWindow() {
                 mouseAxis={mouseAxis}
                 baseSize={baseIconSize}
                 maxScale={maxMag}
+                edge={edge}
                 vertical={vertical}
-                lift={9}
+                iconRatio={iconPlate && iconPlate !== "none" ? 0.96 : 0.84}
+                running={isRunning}
                 tip={app.name}
                 ariaLabel={app.name}
                 bouncing={isBouncing}
@@ -556,20 +754,11 @@ export default function DockWindow() {
                 }}
                 onPointerEnter={(event) => startPreview(app, event.currentTarget)}
                 onPointerLeave={endPreview}
-                className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px] will-change-transform"
+                className="group glacier-icon-glow relative grid shrink-0 place-items-center rounded-[11px]"
               >
-                <span className={`grid size-full place-items-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)] ${plateClass}`}>
+                <span className={`grid size-full place-items-center ${plateClass}`}>
                   <AppIcon app={app} />
                 </span>
-                {isRunning && (
-                  <span
-                    className="absolute -bottom-1.5 h-[3px] w-3.5 rounded-full"
-                    style={{
-                      background: "var(--glacier-aurora-line)",
-                      boxShadow: "0 0 8px rgba(56, 189, 248, 0.65)",
-                    }}
-                  />
-                )}
               </MotionDockItem>
             );
           })}
@@ -583,7 +772,9 @@ export default function DockWindow() {
               mouseAxis={mouseAxis}
               baseSize={baseIconSize}
               maxScale={maxMag}
+              edge={edge}
               vertical={vertical}
+              onOpenChange={setFolderOpen}
               onLaunch={launch}
               onRename={(name) =>
                 setFolders((current) =>
@@ -616,11 +807,12 @@ export default function DockWindow() {
               <MotionDockItem
                 key={id}
                 mouseAxis={mouseAxis}
-                baseSize={utilSize}
+                baseSize={baseIconSize}
                 maxScale={maxMag}
                 variant={vertical ? "square" : "pill"}
+                edge={edge}
                 vertical={vertical}
-                lift={7}
+                iconRatio={0.56}
                 tip={meta.name}
                 ariaLabel={`${meta.name} — ${CATEGORY_META[meta.category].label}`}
                 noDrag
@@ -635,9 +827,7 @@ export default function DockWindow() {
                     event.currentTarget,
                   )
                 }
-                className={`group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center gap-1.5 will-change-transform ${
-                  vertical ? "" : "px-2.5"
-                }`}
+                className="group glacier-widget-pill glacier-icon-glow relative flex shrink-0 items-center justify-center rounded-2xl"
               >
                 <span className="text-[13px] leading-none">
                   {CATEGORY_META[meta.category].glyph}
@@ -655,32 +845,34 @@ export default function DockWindow() {
             <>
               <MotionDockItem
                 mouseAxis={mouseAxis}
-                baseSize={utilSize}
+                baseSize={baseIconSize}
                 maxScale={maxMag}
+                edge={edge}
                 vertical={vertical}
-                lift={8}
+                iconRatio={0.54}
                 tip="Downloads"
                 ariaLabel="Downloads"
                 noDrag
                 onClick={() => invoke("open_path", { path: "shell:Downloads" }).catch(() => {})}
-                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
               >
                 <DownloadsIcon />
               </MotionDockItem>
 
               <MotionDockItem
                 mouseAxis={mouseAxis}
-                baseSize={utilSize}
+                baseSize={baseIconSize}
                 maxScale={maxMag}
+                edge={edge}
                 vertical={vertical}
-                lift={8}
+                iconRatio={0.54}
                 tip="Recycle Bin"
                 ariaLabel="Recycle Bin"
                 noDrag
                 onClick={() =>
                   invoke("open_path", { path: "shell:RecycleBinFolder" }).catch(() => {})
                 }
-                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
               >
                 <TrashBinIcon />
               </MotionDockItem>
@@ -689,60 +881,64 @@ export default function DockWindow() {
 
           <MotionDockItem
             mouseAxis={mouseAxis}
-            baseSize={utilSize}
+            baseSize={baseIconSize}
             maxScale={maxMag}
+            edge={edge}
             vertical={vertical}
-            lift={8}
+            iconRatio={0.54}
             tip="App Library"
             ariaLabel="App Library"
             noDrag
             onClick={() => openCommand("open_launcher")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
           >
             <StartGridIcon />
           </MotionDockItem>
 
           <MotionDockItem
             mouseAxis={mouseAxis}
-            baseSize={utilSize}
+            baseSize={baseIconSize}
             maxScale={maxMag}
+            edge={edge}
             vertical={vertical}
-            lift={8}
+            iconRatio={0.54}
             tip="Activity Monitor"
             ariaLabel="Glacier Activity Monitor"
             noDrag
             onClick={() => openCommand("task_manager")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
           >
             <ActivityMonitorIcon />
           </MotionDockItem>
 
           <MotionDockItem
             mouseAxis={mouseAxis}
-            baseSize={utilSize}
+            baseSize={baseIconSize}
             maxScale={maxMag}
+            edge={edge}
             vertical={vertical}
-            lift={8}
+            iconRatio={0.54}
             tip="Settings"
             ariaLabel="Glacier Settings"
             noDrag
             onClick={() => openCommand("open_settings")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
           >
             <SettingsGearIcon />
           </MotionDockItem>
 
           <MotionDockItem
             mouseAxis={mouseAxis}
-            baseSize={utilSize}
+            baseSize={baseIconSize}
             maxScale={maxMag}
+            edge={edge}
             vertical={vertical}
-            lift={8}
+            iconRatio={0.54}
             tip="Spotlight (Alt + Space)"
             ariaLabel="Spotlight (Alt + Space)"
             noDrag
             onClick={() => openCommand("open_spotlight")}
-            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
           >
             <SpotlightSearchIcon />
           </MotionDockItem>
@@ -751,13 +947,14 @@ export default function DockWindow() {
         {!vertical && (
           <>
             <span className={dividerClass} aria-hidden />
-            <div data-no-drag className="relative flex items-end gap-1.5">
+            <div data-no-drag className={`relative z-10 flex ${dockCrossAlign} gap-2`}>
               {showTelemetryRings && (
                 <>
                   <DockRingMeter
                     label="CPU"
                     value={telemetry.cpuPercent}
                     tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
+                    edge={edge}
                     mouseAxis={mouseAxis}
                     baseSize={baseIconSize}
                     maxScale={maxMag}
@@ -767,6 +964,7 @@ export default function DockWindow() {
                     label="RAM"
                     value={telemetry.ramPercent}
                     tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
+                    edge={edge}
                     mouseAxis={mouseAxis}
                     baseSize={baseIconSize}
                     maxScale={maxMag}
@@ -777,6 +975,7 @@ export default function DockWindow() {
                       label="GPU"
                       value={telemetry.gpuPercent}
                       tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
+                      edge={edge}
                       mouseAxis={mouseAxis}
                       baseSize={baseIconSize}
                       maxScale={maxMag}
@@ -789,6 +988,7 @@ export default function DockWindow() {
                       value={telemetry.batteryPercent}
                       charging={telemetry.batteryCharging}
                       tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
+                      edge={edge}
                       mouseAxis={mouseAxis}
                       baseSize={baseIconSize}
                       maxScale={maxMag}
@@ -802,14 +1002,16 @@ export default function DockWindow() {
                   mouseAxis={mouseAxis}
                   baseSize={baseIconSize}
                   maxScale={maxMag}
+                  onOpenChange={setAiOpen}
                 />
               )}
               <MotionDockItem
                 mouseAxis={mouseAxis}
-                baseSize={Math.round(baseIconSize * 0.82)}
+                baseSize={baseIconSize}
                 maxScale={maxMag}
+                edge={edge}
                 vertical={vertical}
-                lift={6}
+                iconRatio={0.46}
                 tip="Hidden Apps"
                 ariaLabel="Hidden & Background Apps"
                 noDrag
@@ -824,11 +1026,14 @@ export default function DockWindow() {
                     event.currentTarget,
                   )
                 }
-                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+                className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
               >
                 <ChevronTrayIcon />
               </MotionDockItem>
-              <div className="glacier-widget-pill relative flex select-none items-center gap-2.5 px-3 py-1.5">
+              <div
+                className="glacier-widget-pill relative flex shrink-0 select-none items-center gap-2.5 px-3"
+                style={{ height: baseIconSize }}
+              >
                 <div className="flex flex-col leading-none">
                   <span className="text-[9px] font-semibold tracking-wider opacity-55">
                     {weekday}
@@ -849,25 +1054,29 @@ export default function DockWindow() {
         )}
       </div>
 
-      {contextMenu && (
-        <DockContextMenu
-          app={contextMenu.app}
-          pinned={pinned.some((item) => item.path === contextMenu.app.path)}
-          anchorX={contextMenu.x}
-          onClose={() => setContextMenu(null)}
-          onLaunch={launch}
-          onTogglePin={togglePinApp}
-        />
-      )}
+      <AnimatePresence>
+        {contextMenu && (
+          <DockContextMenu
+            app={contextMenu.app}
+            pinned={pinned.some((item) => item.path === contextMenu.app.path)}
+            anchorX={contextMenu.x}
+            onClose={() => setContextMenu(null)}
+            onLaunch={launch}
+            onTogglePin={togglePinApp}
+          />
+        )}
+      </AnimatePresence>
 
-      {surfaceMenuX !== null && (
-        <DockSurfaceMenu
-          anchorX={surfaceMenuX}
-          hasShelf={shelf.length > 0}
-          onToggleShelf={() => setShelfOpen((v) => !v)}
-          onClose={() => setSurfaceMenuX(null)}
-        />
-      )}
+      <AnimatePresence>
+        {surfaceMenuX !== null && (
+          <DockSurfaceMenu
+            anchorX={surfaceMenuX}
+            hasShelf={shelf.length > 0}
+            onToggleShelf={() => setShelfOpen((v) => !v)}
+            onClose={() => setSurfaceMenuX(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

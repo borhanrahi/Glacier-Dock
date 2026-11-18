@@ -6,31 +6,39 @@ import type { Transition } from "motion/react";
 /** Aceternity Floating Dock spring curve for continuous pointer tracking. */
 export const MAC_DOCK_SPRING = {
   mass: 0.1,
-  stiffness: 165,
-  damping: 12.5,
+  stiffness: 150,
+  damping: 12,
 } as const;
 
-/** Snappy macOS spring for floating panels, widget flyouts, and modals. */
+/** Snappy spring for dock popovers, context menus, shelf, and island. */
+export const MAC_POPOVER_SPRING: Transition = {
+  type: "spring",
+  stiffness: 500,
+  damping: 34,
+  mass: 0.5,
+};
+
+/** Critically damped spring for floating panels, widget flyouts, and modals. */
 export const MAC_MODAL_SPRING: Transition = {
   type: "spring",
-  stiffness: 430,
-  damping: 32,
-  mass: 0.72,
+  stiffness: 460,
+  damping: 36,
+  mass: 0.65,
 };
 
 /** Fast micro-spring for floating glass tooltips and badges. */
 export const MAC_TOOLTIP_SPRING: Transition = {
   type: "spring",
-  stiffness: 520,
-  damping: 28,
-  mass: 0.45,
+  stiffness: 540,
+  damping: 32,
+  mass: 0.4,
 };
 
 /** Shared-layout pill indicator spring for navigation tabs. */
 export const MAC_TAB_SPRING: Transition = {
   type: "spring",
-  stiffness: 480,
-  damping: 34,
+  stiffness: 500,
+  damping: 35,
 };
 
 /**
@@ -70,7 +78,7 @@ export function useWindowMotion() {
     hideTimer.current = window.setTimeout(() => {
       hideTimer.current = undefined;
       invoke("hide_window").catch(() => {});
-    }, 115);
+    }, 90);
   }, []);
 
   return { showSeq, visible, dismiss };

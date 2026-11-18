@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
-import { MAC_MODAL_SPRING } from "../sdk/motion";
+import { MAC_POPOVER_SPRING } from "../sdk/motion";
 
 export interface IslandNotification {
   id: string;
@@ -55,18 +55,11 @@ export function GlacierIsland({ notification, onDismiss, onReply }: GlacierIslan
       {notification && (
         <motion.div
           key={notification.id}
-          initial={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0, scale: 0.94 }}
-          animate={{
-            width: "auto",
-            maxWidth: 340,
-            opacity: 1,
-            marginRight: 8,
-            paddingInline: 10,
-            scale: 1,
-          }}
-          exit={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0, scale: 0.94 }}
-          transition={MAC_MODAL_SPRING}
-          className="glacier-dock-glass pointer-events-auto flex items-center gap-3 overflow-hidden will-change-transform"
+          initial={{ opacity: 0, y: 10, scale: 0.94 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 6, scale: 0.96, transition: { duration: 0.12 } }}
+          transition={MAC_POPOVER_SPRING}
+          className="glacier-dock-glass pointer-events-auto mr-2 flex max-w-[340px] items-center gap-3 overflow-hidden px-3 will-change-transform"
           style={{
             height: "var(--glacier-bar-height)",
             borderRadius: "var(--glacier-radius)",

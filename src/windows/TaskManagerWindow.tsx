@@ -179,13 +179,13 @@ export default function TaskManagerWindow() {
     snapshot.totalRam > 0 ? (snapshot.usedRam / snapshot.totalRam) * 100 : 0;
 
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence>
       {visible && (
         <motion.div
           key={showSeq}
           initial={{ opacity: 0, y: 12, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.11 } }}
+          exit={{ opacity: 0, y: 6, scale: 0.97, transition: { duration: 0.09 } }}
           transition={MAC_MODAL_SPRING}
           className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px] will-change-transform"
         >

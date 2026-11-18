@@ -8,7 +8,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import {
   Activity,
   AppWindow,
@@ -401,31 +401,28 @@ export default function SettingsWindow() {
           {!cfg ? (
             <p className="text-[12px] opacity-60">Loading…</p>
           ) : (
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={tab}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
-              >
-                {tab === "appearance" ? (
-                  <AppearanceTab cfg={cfg} patchAppearance={patchAppearance} patch={patch} />
-                ) : tab === "dock" ? (
-                  <DockTab cfg={cfg} patch={patch} />
-                ) : tab === "widgets" ? (
-                  <WidgetsTab cfg={cfg} patch={patch} />
-                ) : tab === "automations" ? (
-                  <AutomationsTab cfg={cfg} patch={patch} />
-                ) : tab === "telemetry" ? (
-                  <TelemetryTab cfg={cfg} patch={patch} frame={frame} />
-                ) : tab === "advanced" ? (
-                  <AdvancedTab cfg={cfg} patch={patch} />
-                ) : (
-                  <AboutTab />
-                )}
-              </motion.div>
-            </AnimatePresence>
+            <motion.div
+              key={tab}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.12, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {tab === "appearance" ? (
+                <AppearanceTab cfg={cfg} patchAppearance={patchAppearance} patch={patch} />
+              ) : tab === "dock" ? (
+                <DockTab cfg={cfg} patch={patch} />
+              ) : tab === "widgets" ? (
+                <WidgetsTab cfg={cfg} patch={patch} />
+              ) : tab === "automations" ? (
+                <AutomationsTab cfg={cfg} patch={patch} />
+              ) : tab === "telemetry" ? (
+                <TelemetryTab cfg={cfg} patch={patch} frame={frame} />
+              ) : tab === "advanced" ? (
+                <AdvancedTab cfg={cfg} patch={patch} />
+              ) : (
+                <AboutTab />
+              )}
+            </motion.div>
           )}
         </div>
 
@@ -565,9 +562,18 @@ function AppearanceTab({
           label="Magnification"
           value={appearance.magnification}
           min={0}
-          max={1.4}
-          step={0.02}
-          onChange={(value) => patchAppearance({ magnification: value })}
+          max={2.0}
+          step={0.05}
+          onChange={(value) =>
+            patchAppearance({
+              magnification:
+                value < 1.1 && value > 0
+                  ? appearance.magnification > 0.5
+                    ? 0
+                    : 1.15
+                  : value,
+            })
+          }
         />
       </Section>
 

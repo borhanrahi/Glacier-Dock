@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion } from "motion/react";
+
+import { MAC_POPOVER_SPRING } from "../sdk/motion";
 import type { InstalledApp } from "../utils/apps";
 
 interface JumpItem {
@@ -71,11 +74,15 @@ export function DockContextMenu({
   const left = Math.max(12, Math.min(anchorX - 105, window.innerWidth - 232));
 
   return (
-    <div
+    <motion.div
       ref={menuRef}
       data-no-drag
       role="menu"
-      className="glacier-dock-glass fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px]"
+      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4, scale: 0.97, transition: { duration: 0.1 } }}
+      transition={MAC_POPOVER_SPRING}
+      className="glacier-dock-glass fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px] will-change-transform"
       style={{ left }}
     >
       <span className="glacier-dock-sheen" aria-hidden />
@@ -156,7 +163,7 @@ export function DockContextMenu({
       >
         <span>Glacier Settings</span>
       </button>
-    </div>
+    </motion.div>
   );
 }
 
@@ -214,11 +221,15 @@ export function DockSurfaceMenu({
   );
 
   return (
-    <div
+    <motion.div
       ref={menuRef}
       data-no-drag
       role="menu"
-      className="glacier-dock-glass fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px]"
+      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4, scale: 0.97, transition: { duration: 0.1 } }}
+      transition={MAC_POPOVER_SPRING}
+      className="glacier-dock-glass fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px] will-change-transform"
       style={{ left }}
     >
       <span className="glacier-dock-sheen" aria-hidden />
@@ -246,6 +257,6 @@ export function DockSurfaceMenu({
       >
         <span>Quit Glacier Dock</span>
       </button>
-    </div>
+    </motion.div>
   );
 }

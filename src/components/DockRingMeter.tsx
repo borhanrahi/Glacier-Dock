@@ -5,12 +5,13 @@
 
 import type { MotionValue } from "motion/react";
 
-import { MotionDockItem } from "./MotionDockItem";
+import { MotionDockItem, type DockEdge } from "./MotionDockItem";
 
 export interface DockRingMeterProps {
   label: string;
   value: number;
   tooltip: string;
+  edge?: DockEdge;
   vertical?: boolean;
   charging?: boolean;
   mouseAxis: MotionValue<number>;
@@ -34,6 +35,7 @@ export function DockRingMeter({
   label,
   value,
   tooltip,
+  edge,
   vertical = false,
   charging = false,
   mouseAxis,
@@ -50,44 +52,47 @@ export function DockRingMeter({
   return (
     <MotionDockItem
       mouseAxis={mouseAxis}
-      baseSize={Math.round(baseSize * 0.94)}
+      baseSize={baseSize}
       maxScale={maxScale}
+      edge={edge}
       vertical={vertical}
-      lift={6}
+      iconRatio={0.84}
       tip={tooltip}
       ariaLabel={tooltip}
       noDrag
       onClick={onClick}
-      className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center will-change-transform"
+      className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center"
     >
-      <svg viewBox="0 0 36 36" className="size-[82%] -rotate-90" aria-hidden>
-        <circle
-          cx="18"
-          cy="18"
-          r={radius}
-          fill="none"
-          stroke="rgba(255, 255, 255, 0.14)"
-          strokeWidth="2.8"
-        />
-        <circle
-          cx="18"
-          cy="18"
-          r={radius}
-          fill="none"
-          stroke={stroke}
-          strokeWidth="2.8"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 320ms ease, stroke 240ms ease" }}
-        />
-      </svg>
-      <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center leading-none">
-        <span className="text-[7px] font-semibold tracking-wider opacity-60">
-          {charging ? "⚡" : label}
-        </span>
-        <span className="mt-0.5 text-[10px] font-semibold tabular-nums">
-          {Math.round(clamped)}
+      <span className="relative grid size-full place-items-center">
+        <svg viewBox="0 0 36 36" className="size-full -rotate-90" aria-hidden>
+          <circle
+            cx="18"
+            cy="18"
+            r={radius}
+            fill="none"
+            stroke="rgba(255, 255, 255, 0.14)"
+            strokeWidth="2.8"
+          />
+          <circle
+            cx="18"
+            cy="18"
+            r={radius}
+            fill="none"
+            stroke={stroke}
+            strokeWidth="2.8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            style={{ transition: "stroke-dashoffset 320ms ease, stroke 240ms ease" }}
+          />
+        </svg>
+        <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center leading-none">
+          <span className="text-[7px] font-semibold tracking-wider opacity-60">
+            {charging ? "⚡" : label}
+          </span>
+          <span className="mt-0.5 text-[10px] font-semibold tabular-nums">
+            {Math.round(clamped)}
+          </span>
         </span>
       </span>
     </MotionDockItem>

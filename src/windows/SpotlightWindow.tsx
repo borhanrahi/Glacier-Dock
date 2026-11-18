@@ -159,13 +159,13 @@ export default function SpotlightWindow() {
 
   return (
     <div className="grid h-full w-full place-items-start p-2">
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {visible && (
           <motion.div
             key={showSeq}
             initial={{ opacity: 0, y: -10, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.97, transition: { duration: 0.11 } }}
+            exit={{ opacity: 0, y: -6, scale: 0.97, transition: { duration: 0.09 } }}
             transition={MAC_MODAL_SPRING}
             className="glacier-dock-glass relative w-full overflow-hidden rounded-[18px] will-change-transform"
           >

@@ -4,9 +4,9 @@
  * specular highlights crafted specifically for Glacier's liquid-glass UI.
  */
 
-export function StartGridIcon() {
+export function StartGridIcon({ className = "size-full" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[22px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <defs>
         <linearGradient id="gl-aurora" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#A5F3FC" />
@@ -26,9 +26,9 @@ export function StartGridIcon() {
   );
 }
 
-export function ActivityMonitorIcon() {
+export function ActivityMonitorIcon({ className = "size-full" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[22px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <defs>
         <linearGradient id="gl-act-bg" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.28" />
@@ -62,9 +62,9 @@ export function ActivityMonitorIcon() {
   );
 }
 
-export function SettingsGearIcon() {
+export function SettingsGearIcon({ className = "size-full" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[22px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <defs>
         <linearGradient id="gl-gear-body" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#F8FAFC" stopOpacity="0.88" />
@@ -87,9 +87,9 @@ export function SettingsGearIcon() {
   );
 }
 
-export function SpotlightSearchIcon() {
+export function SpotlightSearchIcon({ className = "size-full" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[22px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <defs>
         <linearGradient id="gl-lens" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#A5F3FC" stopOpacity="0.45" />
@@ -107,9 +107,9 @@ export function SpotlightSearchIcon() {
   );
 }
 
-export function DownloadsIcon() {
+export function DownloadsIcon({ className = "size-full" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[22px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <defs>
         <linearGradient id="gl-dl-tray" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.32" />
@@ -142,9 +142,9 @@ export function DownloadsIcon() {
   );
 }
 
-export function TrashBinIcon() {
+export function TrashBinIcon({ className = "size-full" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[22px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
       <defs>
         <linearGradient id="gl-trash-glass" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#F1F5F9" stopOpacity="0.38" />
@@ -167,9 +167,9 @@ export function TrashBinIcon() {
   );
 }
 
-export function ChevronTrayIcon() {
+export function ChevronTrayIcon({ className = "size-full" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className="size-[18px] opacity-85" aria-hidden>
+    <svg viewBox="0 0 24 24" className={`${className} opacity-85`} aria-hidden>
       <path
         d="M6.5 14.5 12 9l5.5 5.5"
         fill="none"

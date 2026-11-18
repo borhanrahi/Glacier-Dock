@@ -63,13 +63,13 @@ export default function WidgetFlyoutWindow() {
   }
 
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence>
       {visible && (
         <motion.div
           key={`${id}-${showSeq}`}
           initial={{ opacity: 0, y: 12, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.96, transition: { duration: 0.11 } }}
+          exit={{ opacity: 0, y: 6, scale: 0.96, transition: { duration: 0.09 } }}
           transition={MAC_MODAL_SPRING}
           className="relative h-full w-full will-change-transform"
         >

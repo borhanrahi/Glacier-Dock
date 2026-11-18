@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { AnimatePresence, motion } from "motion/react";
 
-import { MAC_MODAL_SPRING } from "../sdk/motion";
+import { MAC_POPOVER_SPRING } from "../sdk/motion";
 
 export interface ShelfItem {
   path: string;
@@ -39,11 +39,11 @@ export function DropzoneShelf({ items, open, onRemove, onClear, onReveal }: Drop
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0 }}
-          animate={{ width: "auto", maxWidth: 420, opacity: 1, marginRight: 8, paddingInline: 10 }}
-          exit={{ width: 0, opacity: 0, marginRight: 0, paddingInline: 0 }}
-          transition={MAC_MODAL_SPRING}
-          className="pointer-events-auto flex items-center gap-2 overflow-hidden will-change-transform"
+          initial={{ opacity: 0, y: 10, scale: 0.94 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 6, scale: 0.96, transition: { duration: 0.12 } }}
+          transition={MAC_POPOVER_SPRING}
+          className="pointer-events-auto mr-2 flex max-w-[420px] items-center gap-2 overflow-hidden px-3 will-change-transform"
           style={{
             height: "var(--glacier-bar-height)",
             borderRadius: "var(--glacier-radius)",

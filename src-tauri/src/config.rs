@@ -82,7 +82,7 @@ pub struct Appearance {
     pub solar_day_preset: String,
     pub solar_night_preset: String,
     pub chameleon_tint: bool,
-    /// 0 = magnification off, otherwise 1.28..=1.40
+    /// 0 = magnification off, otherwise 1.15..=2.00
     pub magnification: f32,
     pub size: DockSize,
     pub shape: Shape,
@@ -106,7 +106,7 @@ impl Default for Appearance {
             solar_day_preset: "white".into(),
             solar_night_preset: "midnight".into(),
             chameleon_tint: true,
-            magnification: 1.32,
+            magnification: 1.8,
             size: DockSize::Medium,
             shape: Shape::Floating,
             edge_margin: 10.0,
@@ -357,7 +357,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            config_version: 1,
+            config_version: 2,
             replace_taskbar: true,
             show_telemetry_rings: true,
             show_ai_usage: true,
@@ -414,6 +414,14 @@ pub fn load(app: &AppHandle) -> AppConfig {
         migrated = true;
     }
 
+    if cfg.config_version < 2 {
+        if cfg.appearance.magnification > 0.0 && cfg.appearance.magnification <= 1.41 {
+            cfg.appearance.magnification = 1.8;
+        }
+        cfg.config_version = 2;
+        migrated = true;
+    }
+
     // First launch (or an upgrade from a build without pins): write the
     // defaults once so the dock has something sane to show and so emptying the
     // dock later is respected.
@@ -455,9 +463,9 @@ pub fn dock_for_monitor(cfg: &mut AppConfig, monitor: &str) -> DockInstance {
     dock
 }
 
-/// Transparent headroom above/beside the pill so magnified icons never resize
-/// the OS window. Sized to the max 1.35x icon plus shadow padding.
+/// Transparent headroom above/beside the pill so magnified icons, tooltips,
+/// and popovers never clip inside the OS window.
 pub fn headroom(size: DockSize) -> f64 {
     let (_, bar) = size.metrics();
-    (bar * 1.35 - bar) + 44.0
+    (bar * 1.1) + 180.0
 }

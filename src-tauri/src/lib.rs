@@ -305,6 +305,24 @@ fn set_pill_rect(window: WebviewWindow, x: f64, y: f64, width: f64, height: f64)
     }
 }
 
+#[tauri::command]
+fn set_hit_rect(window: WebviewWindow, x: f64, y: f64, width: f64, height: f64) {
+    #[cfg(windows)]
+    {
+        let Ok(hwnd) = window.hwnd() else { return };
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let px = (x * scale).round() as i32;
+        let py = (y * scale).round() as i32;
+        let pw = (width * scale).round().max(1.0) as i32;
+        let ph = (height * scale).round().max(1.0) as i32;
+        win32::hit_test::set_rect(hwnd.0 as isize, px, py, pw, ph);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (window, x, y, width, height);
+    }
+}
+
 /// Raw RGBA frame, prefixed with `u32` width and height so pixels never go
 /// through JSON. Returns an empty buffer when nothing changed.
 #[tauri::command]
@@ -1271,6 +1289,7 @@ pub fn run() {
             media_key,
             dock_layout,
             set_pill_rect,
+            set_hit_rect,
             glass_frame,
             wallpaper_accent,
             restore_native_taskbar,

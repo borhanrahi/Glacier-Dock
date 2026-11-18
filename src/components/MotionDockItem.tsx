@@ -1,5 +1,6 @@
 import {
-  useEffect,
+  useCallback,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -7,13 +8,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from "react";
-import {
-  AnimatePresence,
-  motion,
-  useSpring,
-  useTransform,
-  type MotionValue,
-} from "motion/react";
+import { AnimatePresence, motion, useSpring, useTransform, type MotionValue } from "motion/react";
 
 import { MAC_DOCK_SPRING, MAC_TOOLTIP_SPRING } from "../sdk/motion";
 
@@ -41,8 +36,10 @@ export interface MotionDockItemProps {
 
 /**
  * Aceternity Floating Dock + macOS spring magnification item.
- * Reads `mouseAxis` via MotionValues so pointer sweeps run on Framer Motion's
- * internal frameloop without triggering React state re-renders.
+ *
+ * The pointer position lives in a shared MotionValue, so pointer sweeps never
+ * re-render React. Every animated property is a transform (`scale`/`x`/`y`):
+ * the dock's layout box stays fixed, which keeps the hover math stable.
  */
 export function MotionDockItem({
   mouseAxis,
@@ -68,51 +65,58 @@ export function MotionDockItem({
   const ref = useRef<HTMLButtonElement>(null);
   const [hovered, setHovered] = useState(false);
 
+  // Rest center on the mouse axis. Measured from layout offsets, which ignore
+  // transforms. Reading a live getBoundingClientRect() here used to feed the
+  // magnified size back into the distance calculation, making icons jitter and
+  // slide over each other as the pointer moved.
+  const restCenter = useRef<number | null>(null);
+
   const magnificationOn = maxScale > 1.01;
   const clampedScale = magnificationOn ? Math.min(1.48, Math.max(1.12, maxScale)) : 1;
-  const peakSquare = Math.round(baseSize * clampedScale);
-  const peakPillScale = magnificationOn ? 1 + (clampedScale - 1) * 0.42 : 1;
-  const peakSpread = magnificationOn ? Math.round((clampedScale - 1) * 26) : 0;
+  const peakScale = variant === "square" ? clampedScale : 1 + (clampedScale - 1) * 0.42;
   const peakLift = magnificationOn ? lift : 0;
+  const peakPush = magnificationOn ? (clampedScale - 1) * baseSize * 0.5 : 0;
+
+  const measureRestCenter = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const parent = el.offsetParent as HTMLElement | null;
+    const parentRect = parent?.getBoundingClientRect();
+    const x = (parentRect?.left ?? 0) + el.offsetLeft + el.offsetWidth / 2;
+    const y = (parentRect?.top ?? 0) + el.offsetTop + el.offsetHeight / 2;
+    restCenter.current = vertical ? y : x;
+  }, [vertical]);
+
+  useLayoutEffect(() => {
+    measureRestCenter();
+    const parent = ref.current?.parentElement;
+    const observer = parent ? new ResizeObserver(measureRestCenter) : undefined;
+    if (parent) observer?.observe(parent);
+    window.addEventListener("resize", measureRestCenter);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measureRestCenter);
+    };
+  }, [measureRestCenter, baseSize, variant]);
 
   const distance = useTransform(mouseAxis, (val) => {
-    if (!Number.isFinite(val)) return Number.POSITIVE_INFINITY;
-    const bounds = ref.current?.getBoundingClientRect();
-    if (!bounds) return Number.POSITIVE_INFINITY;
-    return vertical
-      ? val - bounds.y - bounds.height / 2
-      : val - bounds.x - bounds.width / 2;
+    const center = restCenter.current;
+    return Number.isFinite(val) && center !== null ? val - center : Number.POSITIVE_INFINITY;
   });
 
-  const sizeSync = useTransform(
-    distance,
-    [-radius, 0, radius],
-    [baseSize, peakSquare, baseSize],
-  );
-  const ySync = useTransform(
-    distance,
-    [-radius, 0, radius],
-    [0, -peakLift, 0],
-  );
-  const pillScaleSync = useTransform(
-    distance,
-    [-radius, 0, radius],
-    [1, peakPillScale, 1],
-  );
-  const spreadSync = useTransform(
-    distance,
-    [-radius, 0, radius],
-    [0, peakSpread, 0],
-  );
+  const scaleSync = useTransform(distance, [-radius, 0, radius], [1, peakScale, 1]);
+  const liftSync = useTransform(distance, [-radius, 0, radius], [0, -peakLift, 0]);
+  // Neighbours glide outward instead of being reflowed via margins, so the
+  // layout (and every other item's rest center) never changes during hover.
+  const pushSync = useTransform(distance, (d) => {
+    if (!Number.isFinite(d) || d === 0 || peakPush <= 0) return 0;
+    const falloff = Math.min(Math.abs(d), radius) / (2 * radius);
+    return Math.sign(d) * peakPush * Math.cos(Math.PI * falloff) ** 2;
+  });
 
-  const boxSize = useSpring(sizeSync, MAC_DOCK_SPRING);
-  const yOffset = useSpring(ySync, MAC_DOCK_SPRING);
-  const pillScale = useSpring(pillScaleSync, MAC_DOCK_SPRING);
-  const spread = useSpring(spreadSync, MAC_DOCK_SPRING);
-
-  useEffect(() => {
-    boxSize.set(baseSize);
-  }, [baseSize, boxSize]);
+  const scale = useSpring(scaleSync, MAC_DOCK_SPRING);
+  const offset = useSpring(liftSync, MAC_DOCK_SPRING);
+  const push = useSpring(pushSync, MAC_DOCK_SPRING);
 
   const tipPositionClass = vertical
     ? "left-full top-1/2 ml-2.5 -translate-y-1/2"
@@ -136,28 +140,17 @@ export function MotionDockItem({
         setHovered(false);
         onPointerLeave?.(event);
       }}
-      whileTap={{ scale: 0.88 }}
-      animate={
-        bouncing
-          ? {
-              y: [0, -14, 2, -6, 0],
-              scale: [1, 1.07, 0.96, 1.02, 1],
-              transition: { duration: 0.44, ease: [0.22, 1, 0.36, 1] },
-            }
-          : undefined
-      }
-      className={className}
+      className={`${className} active:brightness-90`}
       style={{
         ...style,
-        width: variant === "square" ? boxSize : undefined,
-        height: variant === "square" ? boxSize : baseSize,
+        width: variant === "square" ? baseSize : undefined,
+        height: baseSize,
         minWidth: variant === "pill" ? baseSize : undefined,
-        scale: variant === "pill" ? pillScale : undefined,
-        marginInline: variant === "pill" && !vertical ? spread : undefined,
-        marginBlock: variant === "pill" && vertical ? spread : undefined,
-        y: vertical ? undefined : yOffset,
-        x: vertical ? yOffset : undefined,
+        scale,
         transformOrigin: vertical ? "center left" : "center bottom",
+        // All motion is transform-only; the dock's layout box stays put.
+        x: vertical ? offset : push,
+        y: vertical ? push : offset,
       }}
     >
       <AnimatePresence>
@@ -173,7 +166,20 @@ export function MotionDockItem({
           </motion.span>
         )}
       </AnimatePresence>
-      {children}
+      <motion.span
+        className="grid size-full place-items-center will-change-transform"
+        animate={
+          bouncing
+            ? {
+                y: [0, -14, 2, -6, 0],
+                scale: [1, 1.07, 0.96, 1.02, 1],
+                transition: { duration: 0.44, ease: [0.22, 1, 0.36, 1] },
+              }
+            : undefined
+        }
+      >
+        {children}
+      </motion.span>
     </motion.button>
   );
 }

@@ -9,6 +9,9 @@ npm install
 npm run tauri:dev     # run the dock
 npm run build         # typecheck + production frontend build
 cd src-tauri && cargo check
+
+npm run build:win
+npm run build:win -- --installer
 ```
 
 ## License

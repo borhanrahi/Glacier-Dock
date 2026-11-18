@@ -79,7 +79,7 @@ fn wide_to_string(buffer: &[u16]) -> String {
     String::from_utf16_lossy(&buffer[..end])
 }
 
-fn process_name_image(pid: u32) -> Option<String> {
+pub(crate) fn process_name_image(pid: u32) -> Option<String> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
         let mut buffer = [0u16; 1024];

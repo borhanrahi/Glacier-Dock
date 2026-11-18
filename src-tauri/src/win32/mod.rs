@@ -37,4 +37,6 @@ pub mod taskbar;
 #[cfg(windows)]
 pub mod telemetry;
 #[cfg(windows)]
+pub mod tray_apps;
+#[cfg(windows)]
 pub mod wallpaper;

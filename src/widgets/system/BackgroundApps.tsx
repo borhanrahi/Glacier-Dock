@@ -1,71 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FolderOpen, X } from "lucide-react";
-import { MiniButton, WidgetFrame, bytes } from "../kit";
+import { MiniButton, WidgetFrame } from "../kit";
 import { useAppIcon } from "../../sdk/hooks";
 
-interface ProcEntry {
+interface TrayApp {
   pid: number;
   name: string;
-  ramBytes: number;
   exePath: string | null;
+  hwnd: number;
 }
 
-function ProcIcon({ path }: { path: string | null }) {
+function TrayIcon({ path, name }: { path: string | null; name: string }) {
   const icon = useAppIcon(path);
   if (icon) {
     return <img src={icon} alt="" draggable={false} className="size-5 shrink-0 object-contain" />;
   }
-  return <span className="size-5 shrink-0 rounded bg-white/10" />;
+  return (
+    <span className="grid size-5 shrink-0 place-items-center rounded bg-white/10 text-[9px] font-semibold">
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  );
 }
 
-const SYSTEM_NOISE = new Set([
-  "svchost.exe",
-  "conhost.exe",
-  "dllhost.exe",
-  "sihost.exe",
-  "ctfmon.exe",
-  "fontdrvhost.exe",
-  "dwm.exe",
-  "csrss.exe",
-  "wininit.exe",
-  "lsass.exe",
-  "services.exe",
-  "smss.exe",
-  "taskhostw.exe",
-  "searchhost.exe",
-  "shellexperiencehost.exe",
-  "runtimebroker.exe",
-  "backgroundtaskhost.exe",
-  "wudfhost.exe",
-  "audiodg.exe",
-  "smartscreen.exe",
-  "winlogon.exe",
-  "spoolsv.exe",
-  "dashost.exe",
-  "registry",
-  "system",
-  "system idle process",
-]);
-
 export default function BackgroundApps() {
-  const [procs, setProcs] = useState<ProcEntry[]>([]);
+  const [apps, setApps] = useState<TrayApp[]>([]);
 
   const load = useCallback(() => {
-    invoke<{ processes: ProcEntry[] }>("process_snapshot")
-      .then((snap) => {
-        if (!snap?.processes) return;
-        const unique = new Map<string, ProcEntry>();
-        for (const p of snap.processes) {
-          if (!p.exePath) continue;
-          const lowerName = p.name.toLowerCase();
-          if (SYSTEM_NOISE.has(lowerName)) continue;
-          const key = p.exePath.toLowerCase();
-          if (!unique.has(key)) unique.set(key, p);
-        }
-        setProcs(Array.from(unique.values()).slice(0, 24));
-      })
-      .catch(() => {});
+    invoke<TrayApp[]>("tray_apps")
+      .then((list) => setApps(Array.isArray(list) ? list : []))
+      .catch(() => setApps([]));
   }, []);
 
   useEffect(() => {
@@ -75,33 +39,40 @@ export default function BackgroundApps() {
   }, [load]);
 
   return (
-    <WidgetFrame title="Background Apps" live hint={`${procs.length} active`}>
+    <WidgetFrame title="Hidden Apps" live hint={`${apps.length} in tray`}>
       <div className="flex h-full flex-col gap-1.5">
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] opacity-55">Windows tray overflow</span>
           <MiniButton onClick={load}>Refresh</MiniButton>
         </div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-0.5">
-          {procs.map((p) => (
+          {apps.length === 0 && (
+            <div className="grid h-full place-items-center px-3 text-center text-[10px] leading-relaxed opacity-55">
+              No apps are currently minimized to the Windows tray.
+            </div>
+          )}
+          {apps.map((app) => (
             <div
-              key={p.pid}
+              key={`${app.pid}-${app.exePath ?? app.name}`}
               className="flex items-center gap-2 rounded-lg bg-white/5 px-2 py-1 text-[10px] hover:bg-white/10"
             >
-              <ProcIcon path={p.exePath} />
-              <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
-              <span className="shrink-0 tabular-nums opacity-55">{bytes(p.ramBytes)}</span>
+              <TrayIcon path={app.exePath} name={app.name} />
+              <span className="min-w-0 flex-1 truncate font-medium" title={app.exePath ?? undefined}>
+                {app.name}
+              </span>
               <button
                 type="button"
                 title="Reveal in Explorer"
-                onClick={() => invoke("reveal_process", { pid: p.pid }).catch(() => {})}
+                onClick={() => invoke("reveal_process", { pid: app.pid }).catch(() => {})}
                 className="rounded p-1 opacity-65 hover:bg-white/15 hover:opacity-100"
               >
                 <FolderOpen className="size-3" />
               </button>
               <button
                 type="button"
-                title="End process"
+                title="Close app"
                 onClick={() =>
-                  invoke("kill_process", { pid: p.pid, tree: false })
+                  invoke("kill_process", { pid: app.pid, tree: false })
                     .then(load)
                     .catch(() => {})
                 }

@@ -6,6 +6,11 @@ dist-ssr/
 src-tauri/target/
 src-tauri/gen/schemas/
 
+# Local build output (see scripts/build-windows.mjs)
+release/
+.build/
+*-build/
+
 # Runtime state journal written by the Win32 taskbar module
 taskbar-state.txt
 

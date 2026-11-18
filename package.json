@@ -10,8 +10,10 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "node scripts/build-windows.mjs --dev",
+    "tauri:build": "node scripts/build-windows.mjs",
+    "build:win": "node scripts/build-windows.mjs",
+    "clean": "node scripts/clean-build.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -498,7 +498,7 @@ export default function DockWindow() {
 
       <div
         ref={pillRef}
-        onPointerMove={(event) => mouseAxis.set(vertical ? event.pageY : event.pageX)}
+        onPointerMove={(event) => mouseAxis.set(vertical ? event.clientY : event.clientX)}
         onPointerLeave={() => mouseAxis.set(Number.POSITIVE_INFINITY)}
         onPointerDown={onPillPointerDown}
         onContextMenu={(event) => {

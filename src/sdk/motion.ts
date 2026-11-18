@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Transition } from "motion/react";
@@ -40,10 +40,17 @@ export const MAC_TAB_SPRING: Transition = {
 export function useWindowMotion() {
   const [showSeq, setShowSeq] = useState(0);
   const [visible, setVisible] = useState(true);
+  const hideTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen("glacier://window-show", () => {
+      // A re-open (e.g. clicking a second widget) must win over a dismissal
+      // that is still waiting on its exit animation.
+      if (hideTimer.current !== undefined) {
+        window.clearTimeout(hideTimer.current);
+        hideTimer.current = undefined;
+      }
       setVisible(true);
       setShowSeq((seq) => seq + 1);
     })
@@ -53,12 +60,15 @@ export function useWindowMotion() {
       .catch(() => {});
     return () => {
       unlisten?.();
+      if (hideTimer.current !== undefined) window.clearTimeout(hideTimer.current);
     };
   }, []);
 
   const dismiss = useCallback(() => {
     setVisible(false);
-    window.setTimeout(() => {
+    if (hideTimer.current !== undefined) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = undefined;
       invoke("hide_window").catch(() => {});
     }, 115);
   }, []);

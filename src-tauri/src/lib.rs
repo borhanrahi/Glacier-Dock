@@ -480,6 +480,19 @@ fn process_snapshot() -> serde_json::Value {
     }
 }
 
+/// Third-party apps with a live icon in Windows' hidden-icons flyout.
+#[tauri::command]
+fn tray_apps() -> serde_json::Value {
+    #[cfg(windows)]
+    {
+        return serde_json::to_value(win32::tray_apps::list()).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        serde_json::json!([])
+    }
+}
+
 #[tauri::command]
 fn kill_process(pid: u32, tree: bool) -> Result<(), String> {
     #[cfg(windows)]
@@ -1277,6 +1290,7 @@ pub fn run() {
             hide_window,
             task_manager,
             process_snapshot,
+            tray_apps,
             kill_process,
             suspend_process,
             reveal_process,

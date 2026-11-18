@@ -9,7 +9,10 @@ rust-version = "1.77.2"
 
 [lib]
 name = "glacier_dock_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Desktop-only (Windows) build: an rlib is all the binary needs. The
+# staticlib/cdylib types exist for Tauri's iOS/Android entry points, and the
+# cdylib cannot be linked by MinGW (export ordinal table overflow).
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

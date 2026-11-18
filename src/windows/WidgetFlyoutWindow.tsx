@@ -35,10 +35,17 @@ export default function WidgetFlyoutWindow() {
         dismiss();
       }
     };
+    // This is a separate, focused window: a click on another widget, the dock
+    // or the desktop blurs it. Auto-hide here so the flyout never lingers.
+    // A second widget's `open_widget` re-shows the same window and swaps the
+    // id, and useWindowMotion cancels this pending hide.
+    const onBlur = () => dismiss();
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("blur", onBlur);
     return () => {
       unlisten?.();
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("blur", onBlur);
     };
   }, [dismiss]);
 

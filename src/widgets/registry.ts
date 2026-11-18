@@ -133,9 +133,9 @@ export const WIDGETS: WidgetMeta[] = [
   },
   {
     id: "background-apps",
-    name: "Background Apps",
+    name: "Hidden Apps",
     category: "system",
-    description: "Hidden tray and background apps with Reveal and End controls.",
+    description: "Apps minimized to the Windows tray, like the hidden icons flyout.",
     width: 340,
     height: 380,
     bundled: true,

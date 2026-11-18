@@ -103,10 +103,10 @@ async fn running_apps() -> Vec<config::PinnedApp> {
     #[cfg(windows)]
     {
         return tauri::async_runtime::spawn_blocking(|| {
-            use std::collections::{HashMap, HashSet};
+            use std::collections::{BTreeMap, HashSet};
             let self_pid = std::process::id();
             let snap = win32::process_manager::snapshot();
-            let mut by_pid: HashMap<u32, (String, String)> = HashMap::new();
+            let mut by_pid: BTreeMap<u32, (String, String)> = BTreeMap::new();
             for proc in snap.processes {
                 if proc.pid == self_pid {
                     continue;
@@ -129,18 +129,19 @@ async fn running_apps() -> Vec<config::PinnedApp> {
                     by_pid.insert(proc.pid, (name, exe));
                 }
             }
+            let visible_pids: HashSet<u32> = win32::dwm_preview::app_windows()
+                .into_iter()
+                .map(|w| w.pid)
+                .collect();
             let mut seen = HashSet::new();
             let mut out = Vec::new();
             for (pid, (name, exe)) in by_pid {
-                if win32::dwm_preview::windows_for_pid(pid).is_empty() {
+                if !visible_pids.contains(&pid) {
                     continue;
                 }
                 let key = exe.to_ascii_lowercase();
                 if seen.insert(key) {
                     out.push(config::PinnedApp { name, path: exe });
-                    if out.len() >= 16 {
-                        break;
-                    }
                 }
             }
             out
@@ -498,7 +499,7 @@ fn process_snapshot() -> serde_json::Value {
     }
 }
 
-/// Third-party apps with a live icon in Windows' hidden-icons flyout.
+/// Third-party apps minimized to a window or hidden in the Windows tray overflow.
 #[tauri::command]
 fn tray_apps() -> serde_json::Value {
     #[cfg(windows)]
@@ -508,6 +509,25 @@ fn tray_apps() -> serde_json::Value {
     #[cfg(not(windows))]
     {
         serde_json::json!([])
+    }
+}
+
+#[tauri::command]
+fn restore_tray_app(pid: u32, hwnd: isize, exe_path: Option<String>) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if win32::dwm_preview::focus_hwnd_or_pid(hwnd, pid) {
+            return Ok(());
+        }
+        if let Some(path) = exe_path.filter(|p| !p.is_empty()) {
+            return win32::apps::launch(&path);
+        }
+        return Err("could not restore application".into());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (pid, hwnd, exe_path);
+        Err("unsupported platform".into())
     }
 }
 
@@ -1310,6 +1330,7 @@ pub fn run() {
             task_manager,
             process_snapshot,
             tray_apps,
+            restore_tray_app,
             kill_process,
             suspend_process,
             reveal_process,

@@ -168,8 +168,23 @@ export default function DockWindow() {
         .then((list) => {
           if (disposed || !Array.isArray(list)) return;
           const lowerPaths = list.map((a) => a.path.toLowerCase());
-          setRunning(lowerPaths);
-          setTransientApps(list);
+          setRunning((prev) => {
+            if (
+              prev.length === lowerPaths.length &&
+              prev.every((p, idx) => p === lowerPaths[idx])
+            ) {
+              return prev;
+            }
+            return lowerPaths;
+          });
+          setTransientApps((prev) => {
+            const liveByKey = new Map(list.map((a) => [a.path.toLowerCase(), a]));
+            const kept = prev.filter((a) => liveByKey.has(a.path.toLowerCase()));
+            const keptKeys = new Set(kept.map((a) => a.path.toLowerCase()));
+            const added = list.filter((a) => !keptKeys.has(a.path.toLowerCase()));
+            if (added.length === 0 && kept.length === prev.length) return prev;
+            return [...kept, ...added];
+          });
         })
         .catch(() => {});
     };
@@ -1020,8 +1035,8 @@ export default function DockWindow() {
                     "open_widget",
                     {
                       id: "background-apps",
-                      width: 340,
-                      height: 380,
+                      width: 256,
+                      height: 192,
                     },
                     event.currentTarget,
                   )

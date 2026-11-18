@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import glacier, { type TelemetryFrame } from "./bridge";
-import { loadAppIcon } from "../utils/apps";
+import { loadAppIcon, peekAppIcon } from "../utils/apps";
 
 const EMPTY_TELEMETRY: TelemetryFrame = {
   seq: 0,
@@ -152,15 +152,21 @@ export function useAsync<T>(
 
 /** Shell icon (PNG data URL) for a shortcut path, or `null` while loading. */
 export function useAppIcon(path: string | null | undefined): string | null {
-  const [icon, setIcon] = useState<string | null>(null);
+  const [icon, setIcon] = useState<string | null>(() =>
+    path ? (peekAppIcon(path) ?? null) : null,
+  );
 
   useEffect(() => {
     if (!path) {
       setIcon(null);
       return undefined;
     }
+    const cached = peekAppIcon(path);
+    if (cached !== undefined) {
+      setIcon(cached);
+      return undefined;
+    }
     let alive = true;
-    setIcon(null);
     loadAppIcon(path).then((next) => {
       if (alive) setIcon(next);
     });

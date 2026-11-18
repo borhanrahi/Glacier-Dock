@@ -16,9 +16,9 @@ use windows::Win32::Graphics::Dwm::{
     DWM_TNP_RECTDESTINATION, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindow, GetWindowLongW, GetWindowTextW, GetWindowThreadProcessId,
-    IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GW_OWNER,
-    SW_RESTORE, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    EnumWindows, GetWindow, GetWindowLongW, GetWindowTextW, IsIconic, IsWindowVisible,
+    SetForegroundWindow, ShowWindow, GWL_EXSTYLE, GW_OWNER, SW_RESTORE, WS_EX_APPWINDOW,
+    WS_EX_TOOLWINDOW,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -26,6 +26,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
 pub struct WindowEntry {
     pub hwnd: isize,
     pub title: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct AppWindowState {
+    pub hwnd: isize,
+    pub pid: u32,
+    pub title: String,
+    pub minimized: bool,
 }
 
 static THUMBNAILS: Mutex<Vec<(isize, isize)>> = Mutex::new(Vec::new());
@@ -71,25 +79,34 @@ pub fn detach(preview: isize) {
     }
 }
 
-pub fn windows_for_pid(pid: u32) -> Vec<WindowEntry> {
-    let mut found: Vec<WindowEntry> = Vec::new();
+pub fn app_windows() -> Vec<AppWindowState> {
+    let mut found: Vec<AppWindowState> = Vec::new();
     unsafe {
-        let _ = EnumWindows(Some(enum_window), LPARAM(&mut found as *mut _ as isize));
+        let _ = EnumWindows(Some(enum_app_window), LPARAM(&mut found as *mut _ as isize));
     }
     found
+}
+
+pub fn windows_for_pid(pid: u32) -> Vec<WindowEntry> {
+    app_windows()
         .into_iter()
-        .filter(|window| {
-            window.hwnd != 0 && super::process_manager::pid_for_hwnd(window.hwnd) == pid
+        .filter(|window| window.pid == pid)
+        .map(|window| WindowEntry {
+            hwnd: window.hwnd,
+            title: window.title,
         })
         .collect()
 }
 
 pub fn focus_pid(pid: u32) -> bool {
-    let entries = windows_for_pid(pid);
-    let Some(first) = entries.first() else {
+    let entries: Vec<AppWindowState> = app_windows()
+        .into_iter()
+        .filter(|window| window.pid == pid)
+        .collect();
+    let Some(target) = entries.iter().find(|w| w.minimized).or_else(|| entries.first()) else {
         return false;
     };
-    let hwnd = HWND(first.hwnd as *mut _);
+    let hwnd = HWND(target.hwnd as *mut _);
     unsafe {
         if IsIconic(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_RESTORE);
@@ -98,8 +115,25 @@ pub fn focus_pid(pid: u32) -> bool {
     }
 }
 
-unsafe extern "system" fn enum_window(hwnd: HWND, data: LPARAM) -> BOOL {
-    let out = &mut *(data.0 as *mut Vec<WindowEntry>);
+pub fn focus_hwnd_or_pid(hwnd: isize, pid: u32) -> bool {
+    if hwnd != 0 {
+        let target = HWND(hwnd as *mut _);
+        unsafe {
+            if IsWindowVisible(target).as_bool() {
+                if IsIconic(target).as_bool() {
+                    let _ = ShowWindow(target, SW_RESTORE);
+                }
+                if SetForegroundWindow(target).as_bool() {
+                    return true;
+                }
+            }
+        }
+    }
+    focus_pid(pid)
+}
+
+unsafe extern "system" fn enum_app_window(hwnd: HWND, data: LPARAM) -> BOOL {
+    let out = &mut *(data.0 as *mut Vec<AppWindowState>);
     if !IsWindowVisible(hwnd).as_bool() {
         return TRUE;
     }
@@ -126,14 +160,15 @@ unsafe extern "system" fn enum_window(hwnd: HWND, data: LPARAM) -> BOOL {
     if length <= 0 {
         return TRUE;
     }
-    let mut pid = 0u32;
-    GetWindowThreadProcessId(hwnd, Some(&mut pid));
+    let pid = super::process_manager::pid_for_hwnd(hwnd.0 as isize);
     if pid == 0 {
         return TRUE;
     }
-    out.push(WindowEntry {
+    out.push(AppWindowState {
         hwnd: hwnd.0 as isize,
+        pid,
         title: String::from_utf16_lossy(&title[..length as usize]),
+        minimized: IsIconic(hwnd).as_bool(),
     });
     TRUE
 }

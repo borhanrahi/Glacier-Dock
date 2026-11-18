@@ -14,28 +14,34 @@ export interface PinnedApp {
 const iconCache = new Map<string, string | null>();
 const iconPending = new Map<string, Promise<string | null>>();
 
+/** Return a cached app icon synchronously if already loaded. */
+export function peekAppIcon(path: string): string | null | undefined {
+  return iconCache.get(path.toLowerCase());
+}
+
 /**
  * Shell icon for a shortcut as a PNG data URL, cached per path. Resolves to
  * `null` when the shell has no icon (or outside the desktop app); callers fall
  * back to initial tiles.
  */
 export function loadAppIcon(path: string): Promise<string | null> {
-  if (iconCache.has(path)) return Promise.resolve(iconCache.get(path) ?? null);
-  const pending = iconPending.get(path);
+  const key = path.toLowerCase();
+  if (iconCache.has(key)) return Promise.resolve(iconCache.get(key) ?? null);
+  const pending = iconPending.get(key);
   if (pending) return pending;
 
   const request = invoke<string | null>("app_icon", { path })
     .then((icon) => {
-      iconCache.set(path, icon);
+      iconCache.set(key, icon);
       return icon;
     })
     .catch(() => {
-      iconCache.set(path, null);
+      iconCache.set(key, null);
       return null;
     })
-    .finally(() => iconPending.delete(path));
+    .finally(() => iconPending.delete(key));
 
-  iconPending.set(path, request);
+  iconPending.set(key, request);
   return request;
 }
 

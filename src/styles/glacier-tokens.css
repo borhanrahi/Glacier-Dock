@@ -244,16 +244,41 @@ select {
   transform: scale(1.12);
 }
 
-/* Bleed-free obsidian glass surface for standalone floating panels */
+/* Bleed-free obsidian glass surface for standalone floating panels. */
 .glacier-panel-glass {
   background:
     radial-gradient(ellipse 85% 45% at 50% -10%, rgba(56, 189, 248, 0.13), transparent 65%),
     linear-gradient(180deg, rgba(13, 18, 30, 0.96) 0%, rgba(8, 11, 19, 0.98) 100%);
   box-shadow:
     0 24px 60px rgba(0, 0, 0, 0.65),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.11);
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   color: #f1f5f9;
+}
+
+/* Modals, flyouts and popovers use the same glass material as the dock with
+   a soft contact shadow and subtle hairline border. */
+.glacier-modal-glass {
+  background: var(--glacier-dock-bg, var(--glacier-surface));
+  backdrop-filter: blur(var(--glacier-blur)) saturate(var(--glacier-saturation));
+  box-shadow:
+    var(--glacier-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--glacier-border);
+}
+
+/* Suppress the browser's default focus ring inside glass panels. */
+.glacier-panel-glass :focus,
+.glacier-dock-glass :focus,
+.glacier-modal-glass :focus {
+  outline: none;
+}
+/* Only buttons get a keyboard focus ring — text inputs must stay borderless. */
+.glacier-panel-glass button:focus-visible,
+.glacier-dock-glass button:focus-visible,
+.glacier-modal-glass button:focus-visible {
+  outline: 1px solid rgba(56, 189, 248, 0.6);
+  outline-offset: 1px;
 }
 
 /* Muelle + OpenTaskbar hybrid glass shell with Fresnel specular rim */
@@ -292,9 +317,9 @@ select {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.34) 22%,
-    rgba(255, 255, 255, 0.42) 50%,
-    rgba(255, 255, 255, 0.34) 78%,
+    rgba(255, 255, 255, 0.12) 22%,
+    rgba(255, 255, 255, 0.16) 50%,
+    rgba(255, 255, 255, 0.12) 78%,
     transparent 100%
   );
 }

@@ -1060,6 +1060,7 @@ fn notify(app: AppHandle, title: String, body: String, kind: Option<String>) {
 #[tauri::command]
 async fn open_settings(app: AppHandle) {
     hide_app_preview(app.clone());
+    hide_other_modals(&app, "");
     // Settings is a normal app window: decorated, resizable, not always-on-top.
     if let Some(window) = app.get_webview_window("settings") {
         emit_window_show(&app, "settings");
@@ -1115,13 +1116,7 @@ async fn open_widget(
     x: Option<f64>,
 ) -> Result<(), String> {
     hide_app_preview(app.clone());
-    if let Some(hidden) = app.get_webview_window("hidden-apps") {
-        let _ = hidden.hide();
-    }
-    emit_hidden_apps(&app, false);
-    if let Some(gallery) = app.get_webview_window("widget-gallery") {
-        let _ = gallery.hide();
-    }
+    hide_other_modals(&app, "widget-flyout");
     let width = width.unwrap_or(320.0).clamp(180.0, 640.0);
     let height = height.unwrap_or(240.0).clamp(120.0, 640.0);
     let window = ensure_window_hidden(
@@ -1163,7 +1158,7 @@ fn emit_hidden_apps(_app: &AppHandle, _visible: bool) {}
 #[tauri::command]
 async fn toggle_hidden_apps(app: AppHandle, x: Option<f64>) -> Result<bool, String> {
     const WIDTH: f64 = 300.0;
-    const HEIGHT: f64 = 240.0;
+    const HEIGHT: f64 = 360.0;
 
     if let Some(window) = app.get_webview_window("hidden-apps") {
         if window.is_visible().unwrap_or(false) {
@@ -1173,13 +1168,8 @@ async fn toggle_hidden_apps(app: AppHandle, x: Option<f64>) -> Result<bool, Stri
         }
     }
 
-    // Mutually exclusive with the single-widget flyout and the gallery.
-    if let Some(flyout) = app.get_webview_window("widget-flyout") {
-        let _ = flyout.hide();
-    }
-    if let Some(gallery) = app.get_webview_window("widget-gallery") {
-        let _ = gallery.hide();
-    }
+    hide_app_preview(app.clone());
+    hide_other_modals(&app, "hidden-apps");
 
     let window = ensure_window_hidden(
         &app,
@@ -1216,13 +1206,7 @@ fn dismiss_host_window(app: AppHandle, window: WebviewWindow) {
 #[tauri::command]
 async fn open_widget_gallery(app: AppHandle) -> Result<(), String> {
     hide_app_preview(app.clone());
-    if let Some(hidden) = app.get_webview_window("hidden-apps") {
-        let _ = hidden.hide();
-    }
-    emit_hidden_apps(&app, false);
-    if let Some(flyout) = app.get_webview_window("widget-flyout") {
-        let _ = flyout.hide();
-    }
+    hide_other_modals(&app, "widget-gallery");
 
     let window = ensure_window_hidden(
         &app,
@@ -1238,6 +1222,113 @@ async fn open_widget_gallery(app: AppHandle) -> Result<(), String> {
     emit_window_show(&app, "widget-gallery");
     let _ = window.show();
     let _ = window.set_focus();
+    Ok(())
+}
+
+/// Glacier Terminal: initial working directory for a fresh session.
+#[tauri::command]
+fn terminal_cwd() -> String {
+    #[cfg(windows)]
+    {
+        std::env::var("USERPROFILE").unwrap_or_else(|_| r"C:\".to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
+    }
+}
+
+/// Run one command in a hidden CMD / PowerShell process. A sentinel appended
+/// to the command lets us read back the resulting directory, so `cd` persists
+/// between lines without keeping a long-lived console window around.
+#[tauri::command]
+fn terminal_exec(
+    command: String,
+    cwd: String,
+    shell: Option<String>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+        use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+
+        let shell = shell.unwrap_or_else(|| "cmd".to_string());
+        let powershell = shell.eq_ignore_ascii_case("powershell") || shell.eq_ignore_ascii_case("ps");
+        let (program, args, full) = if powershell {
+            (
+                "powershell.exe",
+                vec!["-NoProfile", "-NoLogo", "-Command"],
+                format!("{}; Write-Output '__GL_CWD__'; (Get-Location).Path", command),
+            )
+        } else {
+            (
+                "cmd.exe",
+                vec!["/d", "/s", "/c"],
+                format!("chcp 65001 >nul & {} & echo __GL_CWD__ & cd", command),
+            )
+        };
+
+        let child = Command::new(program)
+            .args(args)
+            .arg(full)
+            .current_dir(if cwd.trim().is_empty() { "." } else { cwd.trim() })
+            .creation_flags(CREATE_NO_WINDOW.0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|err| err.to_string())?;
+        let output = child.wait_with_output().map_err(|err| err.to_string())?;
+
+        let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if !stderr.is_empty() {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&stderr);
+        }
+
+        let (body, next_cwd) = match text.split_once("__GL_CWD__") {
+            Some((before, after)) => {
+                let reported = after
+                    .lines()
+                    .map(str::trim)
+                    .find(|line| !line.is_empty())
+                    .unwrap_or("")
+                    .to_string();
+                (
+                    before.trim_end_matches(['\r', '\n']).to_string(),
+                    if reported.is_empty() { cwd.clone() } else { reported },
+                )
+            }
+            None => (
+                text.trim_end_matches(['\r', '\n']).to_string(),
+                cwd.clone(),
+            ),
+        };
+
+        Ok(serde_json::json!({
+            "output": body,
+            "cwd": next_cwd,
+            "code": output.status.code().unwrap_or(0),
+        }))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (command, cwd, shell);
+        Err("Glacier Terminal is only available on Windows".into())
+    }
+}
+
+/// Open the Glacier Terminal window from the dock.
+#[tauri::command]
+async fn open_terminal(app: AppHandle) -> Result<(), String> {
+    hide_app_preview(app.clone());
+    hide_other_modals(&app, "terminal");
+    let _ = ensure_window(&app, "terminal", "Glacier Terminal", 820.0, 520.0)
+        .ok_or_else(|| "could not open the terminal".to_string())?;
     Ok(())
 }
 
@@ -1257,6 +1348,9 @@ fn url_encode(value: &str) -> String {
 fn emit_window_show(app: &AppHandle, label: &str) {
     use tauri::Emitter;
     let _ = app.emit_to(label, "glacier://window-show", ());
+    if let Some(window) = app.get_webview_window(label) {
+        apply_borderless_frame(&window);
+    }
 }
 
 /// Create (or fetch) a utility window hidden so callers can size/position it
@@ -1271,10 +1365,11 @@ fn ensure_window_hidden(
     focused: bool,
 ) -> Option<WebviewWindow> {
     if let Some(window) = app.get_webview_window(label) {
+        apply_borderless_frame(&window);
         return Some(window);
     }
 
-    WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         app,
         label,
         WebviewUrl::App(std::path::PathBuf::from(format!(
@@ -1285,16 +1380,177 @@ fn ensure_window_hidden(
     .inner_size(width, height)
     .transparent(true)
     .decorations(false)
+    .shadow(false)
     .always_on_top(true)
     .skip_taskbar(true)
     .resizable(false)
     .focused(focused)
     .visible(false)
     .build()
-    .ok()
+    .ok()?;
+
+    apply_borderless_frame(&window);
+    Some(window)
 }
 
+#[cfg(windows)]
+const BORDERLESS_SUBCLASS_ID: usize = 0x474C_4244;
+
+#[cfg(windows)]
+#[repr(C)]
+struct ModalStyleStruct {
+    style_old: u32,
+    style_new: u32,
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn borderless_subclass_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+    id: usize,
+    _data: usize,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::Foundation::LRESULT;
+    use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GWL_STYLE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCPAINT, WM_STYLECHANGING,
+        WS_BORDER, WS_CAPTION, WS_DLGFRAME, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE,
+        WS_EX_DLGMODALFRAME, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE, WS_POPUP, WS_SYSMENU,
+        WS_THICKFRAME,
+    };
+
+    if msg == WM_STYLECHANGING && lparam.0 != 0 {
+        let styles = &mut *(lparam.0 as *mut ModalStyleStruct);
+        if (wparam.0 as i32) == GWL_STYLE.0 {
+            let framed = WS_BORDER.0 | WS_THICKFRAME.0 | WS_DLGFRAME.0 | WS_CAPTION.0 | WS_SYSMENU.0;
+            styles.style_new = (styles.style_new & !framed) | WS_POPUP.0;
+            return LRESULT(0);
+        }
+        if (wparam.0 as i32) == GWL_EXSTYLE.0 {
+            let edge = WS_EX_APPWINDOW.0
+                | WS_EX_WINDOWEDGE.0
+                | WS_EX_CLIENTEDGE.0
+                | WS_EX_DLGMODALFRAME.0;
+            styles.style_new = (styles.style_new & !edge) | WS_EX_TOOLWINDOW.0;
+            return LRESULT(0);
+        }
+    }
+
+    // Zero non-client area and suppress native frame painting so tao/Windows can
+    // never restore a titlebar, close button, or border on show/focus/resize.
+    if msg == WM_NCCALCSIZE || msg == WM_NCPAINT {
+        return LRESULT(0);
+    }
+
+    if msg == WM_NCDESTROY {
+        let _ = RemoveWindowSubclass(hwnd, Some(borderless_subclass_proc), id);
+    }
+
+    DefSubclassProc(hwnd, msg, wparam, lparam)
+}
+
+/// Remove every frame Windows draws around an undecorated popup window: strip
+/// classic caption/border styles, guard against tao re-applying them via
+/// `WM_STYLECHANGING`, and disable DWM borders and OS corner rounding.
+#[cfg(windows)]
+fn apply_borderless_frame(window: &WebviewWindow) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+        DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+    };
+    use windows::Win32::UI::Shell::SetWindowSubclass;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_BORDER, WS_CAPTION, WS_DLGFRAME,
+        WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
+        WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+    };
+
+    let Ok(hwnd) = window.hwnd() else { return };
+    let hwnd = HWND(hwnd.0);
+    unsafe {
+        let _ = SetWindowSubclass(hwnd, Some(borderless_subclass_proc), BORDERLESS_SUBCLASS_ID, 0);
+
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        let framed: isize = (WS_BORDER.0
+            | WS_THICKFRAME.0
+            | WS_DLGFRAME.0
+            | WS_CAPTION.0
+            | WS_SYSMENU.0) as isize;
+        let _ = SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !framed) | WS_POPUP.0 as isize);
+
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let ex_edge: isize = (WS_EX_APPWINDOW.0
+            | WS_EX_WINDOWEDGE.0
+            | WS_EX_CLIENTEDGE.0
+            | WS_EX_DLGMODALFRAME.0) as isize;
+        let _ = SetWindowLongPtrW(
+            hwnd,
+            GWL_EXSTYLE,
+            (ex_style & !ex_edge) | WS_EX_TOOLWINDOW.0 as isize,
+        );
+
+        let dark: i32 = 1;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &dark as *const i32 as *const _,
+            std::mem::size_of::<i32>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            &DWMWA_COLOR_NONE as *const u32 as *const _,
+            std::mem::size_of::<u32>() as u32,
+        );
+        let corner = DWMWCP_DONOTROUND;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner as *const _ as *const _,
+            std::mem::size_of::<i32>() as u32,
+        );
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_borderless_frame(_window: &WebviewWindow) {}
+
 /// Create (or re-show) a centered utility window: spotlight, launcher, monitor.
+/// Only one modal may be visible at a time, otherwise windows stack on top of
+/// each other and the one behind shows as a bright edge around the front one.
+fn hide_other_modals(app: &AppHandle, keep: &str) {
+    for label in [
+        "widget-flyout",
+        "hidden-apps",
+        "widget-gallery",
+        "terminal",
+        "spotlight",
+        "launcher",
+        "task-manager",
+    ] {
+        if label == keep {
+            continue;
+        }
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.hide();
+        }
+    }
+    emit_hidden_apps(app, false);
+}
+
 fn ensure_window(
     app: &AppHandle,
     label: &str,
@@ -1302,6 +1558,7 @@ fn ensure_window(
     width: f64,
     height: f64,
 ) -> Option<WebviewWindow> {
+    hide_other_modals(app, label);
     let window = ensure_window_hidden(app, label, title, width, height, "", true)?;
     let _ = window.center();
     emit_window_show(app, label);
@@ -1319,12 +1576,15 @@ pub fn toggle_spotlight(app: &AppHandle) {
                 let _ = window.hide();
                 return;
             }
+            hide_app_preview(handle.clone());
+            hide_other_modals(&handle, "spotlight");
             let _ = window.center();
             emit_window_show(&handle, "spotlight");
             let _ = window.show();
             let _ = window.set_focus();
             return;
         }
+        hide_app_preview(handle.clone());
         let _ = ensure_window(&handle, "spotlight", "Glacier Spotlight", 760.0, 480.0);
     });
 }
@@ -1538,6 +1798,9 @@ pub fn run() {
             toggle_hidden_apps,
             dismiss_host_window,
             open_widget_gallery,
+            open_terminal,
+            terminal_cwd,
+            terminal_exec,
             show_dock_menu,
             show_app_menu,
             is_screen_capture_active
@@ -1648,7 +1911,7 @@ pub fn run() {
                             "hidden-apps",
                             "Glacier Hidden Apps",
                             300.0,
-                            240.0,
+                            360.0,
                             "",
                             false,
                         );

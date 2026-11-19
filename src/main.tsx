@@ -23,6 +23,7 @@ const SettingsWindow = lazy(() => import("./windows/SettingsWindow"));
 const WidgetFlyoutWindow = lazy(() => import("./windows/WidgetFlyoutWindow"));
 const HiddenAppsWindow = lazy(() => import("./windows/HiddenAppsWindow"));
 const WidgetGalleryWindow = lazy(() => import("./windows/WidgetGalleryWindow"));
+const TerminalWindow = lazy(() => import("./windows/TerminalWindow"));
 
 /** Docks are created per display as `dock-0`, `dock-1`, … */
 function resolveWindow(label: string): LazyExoticComponent<ComponentType> | null {
@@ -35,6 +36,7 @@ function resolveWindow(label: string): LazyExoticComponent<ComponentType> | null
   if (label === "widget-flyout") return WidgetFlyoutWindow;
   if (label === "hidden-apps") return HiddenAppsWindow;
   if (label === "widget-gallery") return WidgetGalleryWindow;
+  if (label === "terminal") return TerminalWindow;
   return null;
 }
 

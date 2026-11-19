@@ -4,13 +4,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Check, Plus, Search, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
-import { useAppIcon } from "../sdk/hooks";
+import { AppGlyph } from "../components/AppGlyph";
 import { MAC_MODAL_SPRING, useWindowMotion } from "../sdk/motion";
 import {
   CATEGORIES,
-  appHue,
   categorize,
-  initials,
   searchApps,
   type Category,
   type InstalledApp,
@@ -25,29 +23,6 @@ async function hideSelf() {
   } catch {
     /* browser preview */
   }
-}
-
-/** Crisp shell icon with initial-tile fallback. */
-function AppGlyph({ app }: { app: InstalledApp }) {
-  const icon = useAppIcon(app.path);
-  if (icon) {
-    return (
-      <img
-        src={icon}
-        alt=""
-        draggable={false}
-        className="size-10 select-none rounded-lg object-contain"
-      />
-    );
-  }
-  return (
-    <span
-      className="grid size-10 place-items-center rounded-xl text-[12px] font-bold"
-      style={{ background: `hsl(${appHue(app.name)} 70% 52% / 0.9)`, color: "#08111d" }}
-    >
-      {initials(app.name)}
-    </span>
-  );
 }
 
 /**
@@ -272,7 +247,7 @@ export default function LauncherWindow() {
                         className="flex w-full flex-col items-center"
                       >
                         <span className="grid size-14 place-items-center rounded-2xl bg-white/[0.04] ring-1 ring-white/[0.06] transition-transform duration-150 group-hover:-translate-y-0.5">
-                          <AppGlyph app={app} />
+                          <AppGlyph name={app.name} path={app.path} size={44} />
                         </span>
                         <span className="mt-1.5 line-clamp-2 h-7 w-full text-center text-[11px] font-medium leading-tight text-slate-200">
                           {app.name}

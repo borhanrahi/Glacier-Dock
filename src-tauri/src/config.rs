@@ -357,7 +357,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            config_version: 2,
+            config_version: 4,
             replace_taskbar: true,
             show_telemetry_rings: true,
             show_ai_usage: true,
@@ -371,7 +371,7 @@ impl Default for AppConfig {
             advanced: AdvancedSettings::default(),
             pinned_apps: default_pinned_apps(),
             pins_initialized: false,
-            dock_widgets: vec!["cpu-monitor".into(), "clock-large".into(), "battery-status".into()],
+            dock_widgets: Vec::new(),
             latitude: 0.0,
             longitude: 0.0,
         }
@@ -427,6 +427,22 @@ pub fn load(app: &AppHandle) -> AppConfig {
             cfg.appearance.edge_margin = 4.0;
         }
         cfg.config_version = 3;
+        migrated = true;
+    }
+
+    // Older builds pinned three telemetry/clock widgets to every dock by
+    // default. Drop that exact legacy set so the strip starts clean, while
+    // preserving any widgets the user pinned themselves.
+    if cfg.config_version < 4 {
+        let legacy_defaults = vec![
+            "cpu-monitor".to_string(),
+            "clock-large".to_string(),
+            "battery-status".to_string(),
+        ];
+        if cfg.dock_widgets == legacy_defaults {
+            cfg.dock_widgets.clear();
+        }
+        cfg.config_version = 4;
         migrated = true;
     }
 

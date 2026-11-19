@@ -170,7 +170,7 @@ export default function SpotlightWindow() {
             className="glacier-panel-glass relative w-full overflow-hidden rounded-[18px] will-change-transform"
           >
         <span className="glacier-dock-sheen" aria-hidden />
-        <div className="flex items-center gap-2 px-3 py-2.5">
+        <div data-tauri-drag-region className="flex cursor-move items-center gap-2 px-3 py-2.5">
           <Search className="size-4 opacity-60" />
           <input
             ref={inputRef}

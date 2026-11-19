@@ -13,6 +13,7 @@ import {
   SettingsGearIcon,
   SpotlightSearchIcon,
   StartGridIcon,
+  TerminalIcon,
   TrashBinIcon,
   WidgetsIcon,
 } from "../components/DockIcons";
@@ -100,22 +101,29 @@ function AppIcon({ app }: { app: InstalledApp }) {
         src={icon}
         alt=""
         draggable={false}
-        className="size-full select-none object-contain"
+        className="size-full select-none object-contain drop-shadow-[0_2px_3px_rgba(0,0,0,0.4)]"
       />
     );
   }
 
+  const hue = appHue(app.name);
   return (
     <span
-      className="grid size-full place-items-center rounded-[10px]"
+      className="relative grid size-full place-items-center overflow-hidden rounded-[10px]"
       style={{
-        background: `hsl(${appHue(app.name)} 68% 50% / 0.9)`,
+        background: `linear-gradient(145deg, hsl(${hue} 85% 66% / 0.95), hsl(${(hue + 42) % 360} 78% 46% / 0.95))`,
+        boxShadow:
+          "inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(0,0,0,0.2)",
         color: "#08111d",
         fontSize: "11px",
         fontWeight: 700,
       }}
     >
-      {initials(app.name)}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent"
+      />
+      <span className="relative">{initials(app.name)}</span>
     </span>
   );
 }
@@ -1062,6 +1070,22 @@ export default function DockWindow() {
             edge={edge}
             vertical={vertical}
             iconRatio={0.54}
+            tip="Glacier Terminal"
+            ariaLabel="Glacier Terminal"
+            noDrag
+            onClick={() => openCommand("open_terminal")}
+            className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
+          >
+            <TerminalIcon />
+          </MotionDockItem>
+
+          <MotionDockItem
+            mouseAxis={mouseAxis}
+            baseSize={baseIconSize}
+            maxScale={maxMag}
+            edge={edge}
+            vertical={vertical}
+            iconRatio={0.54}
             tip="App Library"
             ariaLabel="App Library"
             noDrag
@@ -1145,9 +1169,15 @@ export default function DockWindow() {
                 tip={hiddenOpen ? "Hide minimized apps" : "Show minimized apps"}
                 ariaLabel="Hidden & Background Apps"
                 noDrag
-                onClick={(event) =>
-                  openCommand("toggle_hidden_apps", undefined, event.currentTarget)
-                }
+                onClick={(event) => {
+                  // No clearDockHover() here: resetting the magnification axis
+                  // makes every dock item snap back and feels like a stutter.
+                  window.clearTimeout(hoverTimer.current);
+                  setHiddenOpen((open) => !open);
+                  invoke("toggle_hidden_apps", { x: anchorX(event.currentTarget) }).catch(
+                    () => setHiddenOpen((open) => !open),
+                  );
+                }}
                 className={`group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl transition-colors ${
                   hiddenOpen ? "bg-white/[0.14] ring-1 ring-[var(--glacier-accent)]" : ""
                 }`}

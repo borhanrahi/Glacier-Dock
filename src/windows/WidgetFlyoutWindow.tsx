@@ -79,6 +79,12 @@ export default function WidgetFlyoutWindow() {
           transition={MAC_MODAL_SPRING}
           className="relative h-full w-full will-change-transform"
         >
+          {/* Slim draggable strip along the top, kept below the close button. */}
+          <div
+            data-tauri-drag-region
+            aria-hidden
+            className="absolute left-2 right-10 top-0 z-20 h-4 cursor-move"
+          />
           <Suspense
             fallback={
               <div className="grid h-full place-items-center text-[11px] text-[var(--glacier-text-muted)]">
@@ -92,7 +98,7 @@ export default function WidgetFlyoutWindow() {
             type="button"
             title="Close"
             onClick={dismiss}
-            className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full bg-black/30 text-[10px] text-white/70 transition-colors hover:bg-black/60"
+            className="absolute right-1.5 top-1.5 z-30 grid size-5 place-items-center rounded-full bg-black/30 text-[10px] text-white/70 transition-colors hover:bg-black/60"
           >
             ×
           </button>

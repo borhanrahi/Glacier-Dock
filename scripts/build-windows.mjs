@@ -41,7 +41,7 @@ const releaseDir = path.join(projectRoot, "release");
 
 function findOnPath(name) {
   const exts = isWindows ? [".exe", ".cmd", ".bat", ""] : [""];
-  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+  for (const dir of (process.env.PATH ?? process.env.Path ?? "").split(path.delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
       const candidate = path.join(dir, name + ext);
@@ -103,7 +103,12 @@ if (toolchain) {
   const rustcPath = which.stdout?.trim();
   if (which.status === 0 && rustcPath && existsSync(rustcPath)) {
     env.RUSTUP_TOOLCHAIN = toolchain;
-    env.PATH = `${path.dirname(rustcPath)}${path.delimiter}${env.PATH ?? ""}`;
+    // Windows exposes the path as "Path" in some shells and "PATH" in others.
+    // Keep both in sync or prepending rustc wipes npm from the child process.
+    const currentPath = env.PATH ?? env.Path ?? "";
+    const combined = `${path.dirname(rustcPath)}${path.delimiter}${currentPath}`;
+    env.PATH = combined;
+    env.Path = combined;
     console.log(`toolchain: ${toolchain}`);
   } else {
     console.warn(`warning: rustup toolchain "${toolchain}" is not installed`);

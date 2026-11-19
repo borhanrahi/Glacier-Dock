@@ -151,7 +151,7 @@ export function WidgetFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="glacier-dock-glass relative flex h-full w-full flex-col gap-2 overflow-hidden rounded-2xl p-3 text-[var(--glacier-text)]">
+    <div className="glacier-modal-glass relative flex h-full w-full flex-col gap-2 overflow-hidden rounded-2xl p-3 text-[var(--glacier-text)]">
       <span className="glacier-dock-sheen" aria-hidden />
       <header className="relative flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--glacier-text-muted)]">

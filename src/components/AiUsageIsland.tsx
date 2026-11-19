@@ -142,7 +142,7 @@ export function AiUsageIsland({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.96, transition: { duration: 0.1 } }}
             transition={MAC_POPOVER_SPRING}
-            className="glacier-dock-glass absolute bottom-[calc(100%+12px)] right-0 z-50 w-64 overflow-hidden rounded-[14px] p-3 text-[11px] will-change-transform"
+            className="glacier-modal-glass absolute bottom-[calc(100%+12px)] right-0 z-50 w-64 overflow-hidden rounded-[14px] p-3 text-[11px] will-change-transform"
           >
           <span className="glacier-dock-sheen" aria-hidden />
           <div className="mb-2 flex items-center justify-between">

@@ -59,7 +59,7 @@ export function GlacierIsland({ notification, onDismiss, onReply }: GlacierIslan
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 6, scale: 0.96, transition: { duration: 0.12 } }}
           transition={MAC_POPOVER_SPRING}
-          className="glacier-dock-glass pointer-events-auto mr-2 flex max-w-[340px] items-center gap-3 overflow-hidden px-3 will-change-transform"
+          className="glacier-modal-glass pointer-events-auto mr-2 flex max-w-[340px] items-center gap-3 overflow-hidden px-3 will-change-transform"
           style={{
             height: "var(--glacier-bar-height)",
             borderRadius: "var(--glacier-radius)",

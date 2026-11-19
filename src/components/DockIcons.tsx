@@ -167,6 +167,35 @@ export function TrashBinIcon({ className = "size-full" }: { className?: string }
   );
 }
 
+export function TerminalIcon({ className = "size-full" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="gl-term-glass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#1E293B" />
+          <stop offset="100%" stopColor="#0B1220" />
+        </linearGradient>
+        <linearGradient id="gl-term-chevron" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#A5F3FC" />
+          <stop offset="100%" stopColor="#818CF8" />
+        </linearGradient>
+      </defs>
+      <rect
+        x="2.5"
+        y="4"
+        width="19"
+        height="16"
+        rx="4"
+        fill="url(#gl-term-glass)"
+        stroke="rgba(255,255,255,0.32)"
+        strokeWidth="1.1"
+      />
+      <path d="M6 7.5 9.4 12 6 16.5" fill="none" stroke="url(#gl-term-chevron)" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M11.5 16.8h6" fill="none" stroke="url(#gl-term-chevron)" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function WidgetsIcon({ className = "size-full" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden>

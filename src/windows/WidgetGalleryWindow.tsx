@@ -152,9 +152,12 @@ export default function WidgetGalleryWindow() {
           transition={MAC_MODAL_SPRING}
           className="relative h-full w-full will-change-transform"
         >
-          <div className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-2xl text-[var(--glacier-text)]">
+          <div className="glacier-modal-glass relative flex h-full w-full flex-col overflow-hidden rounded-2xl text-[var(--glacier-text)]">
             <span className="glacier-dock-sheen" aria-hidden />
-            <header className="relative flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
+            <header
+              data-tauri-drag-region
+              className="relative flex cursor-move items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3"
+            >
               <div className="flex items-center gap-2.5">
                 <span className="grid size-8 place-items-center rounded-xl bg-[var(--glacier-accent)]/20 text-base">
                   ▦

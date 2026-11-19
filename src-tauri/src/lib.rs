@@ -1412,19 +1412,28 @@ unsafe extern "system" fn borderless_subclass_proc(
     id: usize,
     _data: usize,
 ) -> windows::Win32::Foundation::LRESULT {
-    use windows::Win32::Foundation::LRESULT;
+    use windows::Win32::Foundation::{LPARAM, LRESULT};
     use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GWL_STYLE, WM_NCCALCSIZE, WM_NCDESTROY, WM_NCPAINT, WM_STYLECHANGING,
-        WS_BORDER, WS_CAPTION, WS_DLGFRAME, WS_EX_APPWINDOW, WS_EX_CLIENTEDGE,
-        WS_EX_DLGMODALFRAME, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE, WS_POPUP, WS_SYSMENU,
-        WS_THICKFRAME,
+        GWL_EXSTYLE, GWL_STYLE, WM_ERASEBKGND, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCDESTROY,
+        WM_NCPAINT, WM_STYLECHANGING, WS_BORDER, WS_CAPTION, WS_DLGFRAME, WS_EX_APPWINDOW,
+        WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
+        WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
+
+    const WM_NCUAHDRAWCAPTION: u32 = 0x00AE;
+    const WM_NCUAHDRAWFRAME: u32 = 0x00AF;
 
     if msg == WM_STYLECHANGING && lparam.0 != 0 {
         let styles = &mut *(lparam.0 as *mut ModalStyleStruct);
         if (wparam.0 as i32) == GWL_STYLE.0 {
-            let framed = WS_BORDER.0 | WS_THICKFRAME.0 | WS_DLGFRAME.0 | WS_CAPTION.0 | WS_SYSMENU.0;
+            let framed = WS_BORDER.0
+                | WS_THICKFRAME.0
+                | WS_DLGFRAME.0
+                | WS_CAPTION.0
+                | WS_SYSMENU.0
+                | WS_MINIMIZEBOX.0
+                | WS_MAXIMIZEBOX.0;
             styles.style_new = (styles.style_new & !framed) | WS_POPUP.0;
             return LRESULT(0);
         }
@@ -1438,10 +1447,24 @@ unsafe extern "system" fn borderless_subclass_proc(
         }
     }
 
-    // Zero non-client area and suppress native frame painting so tao/Windows can
-    // never restore a titlebar, close button, or border on show/focus/resize.
-    if msg == WM_NCCALCSIZE || msg == WM_NCPAINT {
+    // Suppress DefWindowProc's non-client caption/title repaint on focus/activate
+    // by passing lParam = -1, while still letting tao track active state.
+    if msg == WM_NCACTIVATE {
+        return DefSubclassProc(hwnd, msg, wparam, LPARAM(-1));
+    }
+
+    // Zero non-client area and suppress native frame/background painting so
+    // Windows/DWM never draws a titlebar, caption text, or border behind modals.
+    if msg == WM_NCCALCSIZE
+        || msg == WM_NCPAINT
+        || msg == WM_NCUAHDRAWCAPTION
+        || msg == WM_NCUAHDRAWFRAME
+    {
         return LRESULT(0);
+    }
+
+    if msg == WM_ERASEBKGND {
+        return LRESULT(1);
     }
 
     if msg == WM_NCDESTROY {
@@ -1453,20 +1476,21 @@ unsafe extern "system" fn borderless_subclass_proc(
 
 /// Remove every frame Windows draws around an undecorated popup window: strip
 /// classic caption/border styles, guard against tao re-applying them via
-/// `WM_STYLECHANGING`, and disable DWM borders and OS corner rounding.
+/// `WM_STYLECHANGING`, and disable DWM non-client rendering, borders, and rounding.
 #[cfg(windows)]
 fn apply_borderless_frame(window: &WebviewWindow) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
-        DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
+        DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+        DWMWA_NCRENDERING_POLICY, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWCP_DONOTROUND,
     };
     use windows::Win32::UI::Shell::SetWindowSubclass;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE, SWP_FRAMECHANGED,
         SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WS_BORDER, WS_CAPTION, WS_DLGFRAME,
         WS_EX_APPWINDOW, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_TOOLWINDOW, WS_EX_WINDOWEDGE,
-        WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
     };
 
     let Ok(hwnd) = window.hwnd() else { return };
@@ -1479,7 +1503,9 @@ fn apply_borderless_frame(window: &WebviewWindow) {
             | WS_THICKFRAME.0
             | WS_DLGFRAME.0
             | WS_CAPTION.0
-            | WS_SYSMENU.0) as isize;
+            | WS_SYSMENU.0
+            | WS_MINIMIZEBOX.0
+            | WS_MAXIMIZEBOX.0) as isize;
         let _ = SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !framed) | WS_POPUP.0 as isize);
 
         let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
@@ -1493,6 +1519,13 @@ fn apply_borderless_frame(window: &WebviewWindow) {
             (ex_style & !ex_edge) | WS_EX_TOOLWINDOW.0 as isize,
         );
 
+        let ncrp = DWMNCRP_DISABLED;
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_NCRENDERING_POLICY,
+            &ncrp as *const _ as *const _,
+            std::mem::size_of::<i32>() as u32,
+        );
         let dark: i32 = 1;
         let _ = DwmSetWindowAttribute(
             hwnd,

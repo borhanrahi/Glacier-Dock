@@ -61,6 +61,17 @@ export default function TerminalWindow() {
     if (visible) inputRef.current?.focus();
   }, [visible, showSeq]);
 
+  useEffect(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [dismiss]);
+
   const run = async () => {
     const command = input.trim();
     setInput("");
@@ -168,7 +179,7 @@ export default function TerminalWindow() {
         <span className="glacier-dock-sheen" aria-hidden />
 
         <header
-          data-tauri-drag-region
+          data-tauri-drag-region="deep"
           className="relative flex cursor-move items-center gap-2.5 border-b border-white/[0.07] px-3.5 py-2.5"
         >
           <span className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-sky-400/25 to-indigo-500/20 p-1">

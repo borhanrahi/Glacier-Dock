@@ -106,8 +106,18 @@ export default function TaskManagerWindow() {
   useEffect(() => {
     refresh();
     timer.current = window.setInterval(refresh, 1000);
-    return () => window.clearInterval(timer.current);
-  }, [refresh]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearInterval(timer.current);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [refresh, dismiss]);
 
   useEffect(() => {
     if (tab !== "Startup & Ports") return;
@@ -190,7 +200,7 @@ export default function TaskManagerWindow() {
           className="glacier-panel-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px] will-change-transform"
         >
           <span className="glacier-dock-sheen" aria-hidden />
-          <header data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
+          <header data-tauri-drag-region="deep" className="flex cursor-move items-center gap-3 border-b border-white/10 px-4 py-2.5">
             <span className="text-xs font-semibold tracking-wide">Glacier Activity Monitor</span>
             <nav className="ml-3 flex gap-1">
               {TABS.map((entry) => {

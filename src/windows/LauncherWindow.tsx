@@ -99,6 +99,18 @@ export default function LauncherWindow() {
     setActiveIdx(0);
   }, [query, filter]);
 
+  useEffect(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (query.trim()) setQuery("");
+        else dismiss();
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [query, dismiss]);
+
   const launch = async (app: InstalledApp) => {
     try {
       await invoke("launch_app", { path: app.path });
@@ -109,12 +121,6 @@ export default function LauncherWindow() {
   };
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      if (query.trim()) setQuery("");
-      else dismiss();
-      return;
-    }
     if (filtered.length === 0) return;
     if (event.key === "ArrowRight") {
       event.preventDefault();
@@ -151,8 +157,8 @@ export default function LauncherWindow() {
           <span className="glacier-dock-sheen" aria-hidden />
 
           <div
-            data-tauri-drag-region
-            className="flex items-center gap-3 border-b border-white/[0.08] px-5 py-3.5"
+            data-tauri-drag-region="deep"
+            className="flex cursor-move items-center gap-3 border-b border-white/[0.08] px-5 py-3.5"
           >
             <Search className="size-4 shrink-0 text-slate-400" />
             <input

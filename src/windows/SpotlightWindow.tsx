@@ -74,8 +74,20 @@ export default function SpotlightWindow() {
   }, []);
 
   useEffect(() => {
-    window.setTimeout(() => inputRef.current?.focus(), 20);
-  }, [showSeq]);
+    const t = window.setTimeout(() => inputRef.current?.focus(), 40);
+    return () => window.clearTimeout(t);
+  }, [showSeq, visible]);
+
+  useEffect(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [dismiss]);
 
   useEffect(() => setSelected(0), [query]);
 
@@ -128,10 +140,6 @@ export default function SpotlightWindow() {
   const total = matchedApps.length + matchedActions.length;
 
   const onKeyDown = async (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Escape") {
-      dismiss();
-      return;
-    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setSelected((value) => (total === 0 ? 0 : (value + 1) % total));
@@ -170,19 +178,25 @@ export default function SpotlightWindow() {
             className="glacier-panel-glass relative w-full overflow-hidden rounded-[18px] will-change-transform"
           >
         <span className="glacier-dock-sheen" aria-hidden />
-        <div data-tauri-drag-region className="flex cursor-move items-center gap-2 px-3 py-2.5">
+        <div data-tauri-drag-region="deep" className="flex cursor-move items-center gap-2 px-3 py-2.5">
           <Search className="size-4 opacity-60" />
           <input
             ref={inputRef}
+            autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
             placeholder="Search for apps, settings, documents — or type = 1450 * 0.18"
             className="h-7 w-full bg-transparent text-sm outline-none placeholder:opacity-45"
           />
-          <kbd className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[9px] opacity-70">
+          <button
+            type="button"
+            title="Close (Esc)"
+            onClick={dismiss}
+            className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[9px] opacity-70 transition-colors hover:bg-white/20 hover:opacity-100"
+          >
             Esc
-          </kbd>
+          </button>
         </div>
 
         {(math !== null || error) && (

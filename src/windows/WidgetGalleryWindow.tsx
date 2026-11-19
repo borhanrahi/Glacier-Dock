@@ -155,7 +155,7 @@ export default function WidgetGalleryWindow() {
           <div className="glacier-modal-glass relative flex h-full w-full flex-col overflow-hidden rounded-2xl text-[var(--glacier-text)]">
             <span className="glacier-dock-sheen" aria-hidden />
             <header
-              data-tauri-drag-region
+              data-tauri-drag-region="deep"
               className="relative flex cursor-move items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3"
             >
               <div className="flex items-center gap-2.5">

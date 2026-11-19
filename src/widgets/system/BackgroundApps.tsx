@@ -85,7 +85,7 @@ export default function BackgroundApps() {
       <span className="glacier-dock-sheen" aria-hidden />
 
       <header
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className="relative flex cursor-move items-center gap-2 border-b border-white/[0.07] px-3 py-2"
       >
         <span className="min-w-0 flex-1 leading-tight">

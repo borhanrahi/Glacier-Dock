@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import glacier, { type TelemetryFrame } from "./bridge";
 import { loadAppIcon, peekAppIcon } from "../utils/apps";
 
-const EMPTY_TELEMETRY: TelemetryFrame = {
+export const EMPTY_TELEMETRY: TelemetryFrame = {
   seq: 0,
   timestampMs: 0,
   uptimeSecs: 0,

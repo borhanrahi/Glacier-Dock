@@ -167,6 +167,27 @@ export function TrashBinIcon({ className = "size-full" }: { className?: string }
   );
 }
 
+export function WidgetsIcon({ className = "size-full" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <defs>
+        <linearGradient id="gl-widgets-card" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#A5F3FC" />
+          <stop offset="100%" stopColor="#818CF8" />
+        </linearGradient>
+        <linearGradient id="gl-widgets-glass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.34" />
+          <stop offset="100%" stopColor="#38BDF8" stopOpacity="0.10" />
+        </linearGradient>
+      </defs>
+      <rect x="3" y="3.5" width="8.2" height="8.2" rx="2.3" fill="url(#gl-widgets-card)" />
+      <rect x="12.8" y="3.5" width="8.2" height="5" rx="2.1" fill="url(#gl-widgets-glass)" stroke="rgba(255,255,255,0.38)" strokeWidth="1" />
+      <rect x="3" y="13.5" width="8.2" height="7" rx="2.1" fill="url(#gl-widgets-glass)" stroke="rgba(255,255,255,0.38)" strokeWidth="1" />
+      <rect x="12.8" y="10.2" width="8.2" height="10.3" rx="2.3" fill="url(#gl-widgets-card)" opacity="0.85" />
+    </svg>
+  );
+}
+
 export function ChevronTrayIcon({ className = "size-full" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={`${className} opacity-85`} aria-hidden>

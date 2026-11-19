@@ -80,7 +80,7 @@ export default function BackgroundApps() {
       hwnd: app.hwnd,
       exePath: app.exePath,
     }).catch(() => {});
-    invoke("hide_window").catch(() => {});
+    invoke("dismiss_host_window").catch(() => {});
   };
 
   return (

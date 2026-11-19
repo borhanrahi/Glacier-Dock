@@ -1115,6 +1115,13 @@ async fn open_widget(
     x: Option<f64>,
 ) -> Result<(), String> {
     hide_app_preview(app.clone());
+    if let Some(hidden) = app.get_webview_window("hidden-apps") {
+        let _ = hidden.hide();
+    }
+    emit_hidden_apps(&app, false);
+    if let Some(gallery) = app.get_webview_window("widget-gallery") {
+        let _ = gallery.hide();
+    }
     let width = width.unwrap_or(320.0).clamp(180.0, 640.0);
     let height = height.unwrap_or(240.0).clamp(120.0, 640.0);
     let window = ensure_window_hidden(
@@ -1135,6 +1142,100 @@ async fn open_widget(
         let _ = app.emit("glacier://widget-flyout", serde_json::json!({ "id": id }));
     }
     emit_window_show(&app, "widget-flyout");
+    let _ = window.show();
+    let _ = window.set_focus();
+    Ok(())
+}
+
+/// Emit the hidden-apps flyout visibility so every dock can keep its `^`
+/// button in sync (including when the panel is dismissed with Escape).
+#[cfg(windows)]
+fn emit_hidden_apps(app: &AppHandle, visible: bool) {
+    use tauri::Emitter;
+    let _ = app.emit("glacier://hidden-apps", serde_json::json!({ "visible": visible }));
+}
+
+#[cfg(not(windows))]
+fn emit_hidden_apps(_app: &AppHandle, _visible: bool) {}
+
+/// Windows-style taskbar corner: one click opens the hidden/tray apps panel,
+/// a second click closes it. Opening any other popover closes this one.
+#[tauri::command]
+async fn toggle_hidden_apps(app: AppHandle, x: Option<f64>) -> Result<bool, String> {
+    const WIDTH: f64 = 300.0;
+    const HEIGHT: f64 = 240.0;
+
+    if let Some(window) = app.get_webview_window("hidden-apps") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+            emit_hidden_apps(&app, false);
+            return Ok(false);
+        }
+    }
+
+    // Mutually exclusive with the single-widget flyout and the gallery.
+    if let Some(flyout) = app.get_webview_window("widget-flyout") {
+        let _ = flyout.hide();
+    }
+    if let Some(gallery) = app.get_webview_window("widget-gallery") {
+        let _ = gallery.hide();
+    }
+
+    let window = ensure_window_hidden(
+        &app,
+        "hidden-apps",
+        "Glacier Hidden Apps",
+        WIDTH,
+        HEIGHT,
+        "",
+        true,
+    )
+    .ok_or_else(|| "could not open the hidden apps panel".to_string())?;
+    let _ = window.set_size(tauri::LogicalSize::new(WIDTH, HEIGHT));
+    position_above_dock(&window, WIDTH, HEIGHT, x);
+    emit_window_show(&app, "hidden-apps");
+    let _ = window.show();
+    let _ = window.set_focus();
+    emit_hidden_apps(&app, true);
+    Ok(true)
+}
+
+/// Close the host window from inside a widget, keeping dock state in sync when
+/// the host is the hidden-apps panel (other hosts behave like `hide_window`).
+#[tauri::command]
+fn dismiss_host_window(app: AppHandle, window: WebviewWindow) {
+    let is_hidden_apps = window.label() == "hidden-apps";
+    let _ = window.hide();
+    if is_hidden_apps {
+        emit_hidden_apps(&app, false);
+    }
+}
+
+/// Widgets gallery: every installed widget in one dock-native window, with
+/// open / pin / install / uninstall actions.
+#[tauri::command]
+async fn open_widget_gallery(app: AppHandle) -> Result<(), String> {
+    hide_app_preview(app.clone());
+    if let Some(hidden) = app.get_webview_window("hidden-apps") {
+        let _ = hidden.hide();
+    }
+    emit_hidden_apps(&app, false);
+    if let Some(flyout) = app.get_webview_window("widget-flyout") {
+        let _ = flyout.hide();
+    }
+
+    let window = ensure_window_hidden(
+        &app,
+        "widget-gallery",
+        "Glacier Widgets",
+        840.0,
+        580.0,
+        "",
+        true,
+    )
+    .ok_or_else(|| "could not open the widgets gallery".to_string())?;
+    let _ = window.center();
+    emit_window_show(&app, "widget-gallery");
     let _ = window.show();
     let _ = window.set_focus();
     Ok(())
@@ -1434,6 +1535,9 @@ pub fn run() {
             notify,
             open_settings,
             open_widget,
+            toggle_hidden_apps,
+            dismiss_host_window,
+            open_widget_gallery,
             show_dock_menu,
             show_app_menu,
             is_screen_capture_active
@@ -1536,6 +1640,24 @@ pub fn run() {
                             "Glacier Spotlight",
                             760.0,
                             480.0,
+                            "",
+                            false,
+                        );
+                        let _ = ensure_window_hidden(
+                            &warm_inner,
+                            "hidden-apps",
+                            "Glacier Hidden Apps",
+                            300.0,
+                            240.0,
+                            "",
+                            false,
+                        );
+                        let _ = ensure_window_hidden(
+                            &warm_inner,
+                            "widget-gallery",
+                            "Glacier Widgets",
+                            840.0,
+                            580.0,
                             "",
                             false,
                         );

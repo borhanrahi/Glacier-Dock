@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { motion } from "motion/react";
 import {
   Activity,
@@ -1072,6 +1073,7 @@ function WidgetsTab({
         bundled: true,
       });
       await reload();
+      emit("glacier://widgets-changed").catch(() => {});
       setMessage(`Installed ${meta.name}`);
     } catch (error) {
       setMessage(String(error));
@@ -1084,7 +1086,11 @@ function WidgetsTab({
     setBusy(id);
     try {
       await glacier.store.uninstall(id);
+      if (cfg.dockWidgets.includes(id)) {
+        patch("dockWidgets", cfg.dockWidgets.filter((entry) => entry !== id));
+      }
       await reload();
+      emit("glacier://widgets-changed").catch(() => {});
       setMessage(`Removed ${id}`);
     } catch (error) {
       setMessage(String(error));
@@ -1262,6 +1268,7 @@ function WidgetsTab({
                       glacier.store
                         .installFromUrl(url)
                         .then(reload)
+                        .then(() => emit("glacier://widgets-changed").catch(() => {}))
                         .then(() => setMessage(`Installed ${name}`))
                         .catch((error) => setMessage(String(error)))
                     }

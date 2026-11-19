@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { AnimatePresence, useMotionValue } from "motion/react";
+import { AnimatePresence, useMotionValue, type MotionValue } from "motion/react";
 
 import { AiUsageIsland } from "../components/AiUsageIsland";
 import { AppFolderTile } from "../components/AppFolderTile";
@@ -14,12 +14,15 @@ import {
   SpotlightSearchIcon,
   StartGridIcon,
   TrashBinIcon,
+  WidgetsIcon,
 } from "../components/DockIcons";
 import { DockRingMeter } from "../components/DockRingMeter";
 import { DropzoneShelf, toShelfItem, type ShelfItem } from "../components/DropzoneShelf";
 import { GlacierIsland, type IslandNotification } from "../components/GlacierIsland";
 import { MotionDockItem, type DockEdge } from "../components/MotionDockItem";
-import { useAppIcon, useTelemetry } from "../sdk/hooks";
+import { useAppIcon, useNow } from "../sdk/hooks";
+import { useSharedTelemetry } from "../sdk/telemetryStore";
+import type { TelemetryFrame } from "../sdk/bridge";
 import {
   applyAccent,
   applyDockMetrics,
@@ -117,6 +120,171 @@ function AppIcon({ app }: { app: InstalledApp }) {
   );
 }
 
+/* ---------------------------------------------------------------- subviews */
+
+/** Compact live label for a widget pinned to the dock strip. */
+function inlineWidgetLabel(
+  id: string,
+  telemetry: TelemetryFrame,
+  now: Date,
+  fallback: string,
+): string {
+  switch (id) {
+    case "cpu-monitor":
+      return `${telemetry.cpuPercent.toFixed(0)}%`;
+    case "memory-gauge":
+      return `${telemetry.ramPercent.toFixed(0)}%`;
+    case "disk-space":
+      return `${Math.round(telemetry.diskFreeGb)} GB`;
+    case "network-throughput":
+      return `↓${Math.round(telemetry.netDownBps / 1024)}K`;
+    case "top-process":
+      return telemetry.topProcess ? telemetry.topProcess.name : fallback;
+    case "battery-status":
+      return telemetry.batteryPercent !== null
+        ? `${Math.round(telemetry.batteryPercent)}%`
+        : fallback;
+    case "clock-large":
+    case "world-clock":
+      return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    case "date-card":
+      return now.toLocaleDateString([], { day: "numeric", month: "short" });
+    default:
+      return fallback;
+  }
+}
+
+function WidgetPillLabel({ id, fallback }: { id: string; fallback: string }) {
+  const telemetry = useSharedTelemetry();
+  const now = useNow(1000);
+  return <>{inlineWidgetLabel(id, telemetry, now, fallback)}</>;
+}
+
+/** Telemetry rings + AI island live in their own subtree so a 1 Hz frame never
+ *  re-renders the app tiles, widget pills or the dock's layout bookkeeping. */
+function DockTelemetryStrip({
+  showRings,
+  showAiUsage,
+  vertical,
+  mouseAxis,
+  baseSize,
+  maxScale,
+  edge,
+  onAiOpenChange,
+  onTaskManager,
+}: {
+  showRings: boolean;
+  showAiUsage: boolean;
+  vertical: boolean;
+  mouseAxis: MotionValue<number>;
+  baseSize: number;
+  maxScale: number;
+  edge: DockEdge;
+  onAiOpenChange: (open: boolean) => void;
+  onTaskManager: () => void;
+}) {
+  const telemetry = useSharedTelemetry();
+  return (
+    <>
+      {showRings && (
+        <>
+          <DockRingMeter
+            label="CPU"
+            value={telemetry.cpuPercent}
+            tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
+            edge={edge}
+            mouseAxis={mouseAxis}
+            baseSize={baseSize}
+            maxScale={maxScale}
+            onClick={onTaskManager}
+          />
+          <DockRingMeter
+            label="RAM"
+            value={telemetry.ramPercent}
+            tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
+            edge={edge}
+            mouseAxis={mouseAxis}
+            baseSize={baseSize}
+            maxScale={maxScale}
+            onClick={onTaskManager}
+          />
+          {telemetry.gpuPercent !== null && (
+            <DockRingMeter
+              label="GPU"
+              value={telemetry.gpuPercent}
+              tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
+              edge={edge}
+              mouseAxis={mouseAxis}
+              baseSize={baseSize}
+              maxScale={maxScale}
+              onClick={onTaskManager}
+            />
+          )}
+          {telemetry.batteryPercent !== null && (
+            <DockRingMeter
+              label="BAT"
+              value={telemetry.batteryPercent}
+              charging={telemetry.batteryCharging}
+              tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
+              edge={edge}
+              mouseAxis={mouseAxis}
+              baseSize={baseSize}
+              maxScale={maxScale}
+            />
+          )}
+        </>
+      )}
+      {showAiUsage && (
+        <AiUsageIsland
+          vertical={vertical}
+          mouseAxis={mouseAxis}
+          baseSize={baseSize}
+          maxScale={maxScale}
+          onOpenChange={onAiOpenChange}
+        />
+      )}
+    </>
+  );
+}
+
+/** The dock clock is a real button: click opens the date/calendar widget. */
+function DockClock({
+  baseSize,
+  profile,
+  onOpen,
+}: {
+  baseSize: number;
+  profile: string | null;
+  onOpen: (element: HTMLElement) => void;
+}) {
+  const now = useNow(1000);
+  const weekday = now.toLocaleDateString([], { weekday: "short" }).toUpperCase();
+  const dateLabel = now.toLocaleDateString([], { day: "numeric", month: "short" });
+  const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    <button
+      type="button"
+      data-no-drag
+      title="Date & calendar"
+      aria-label={`Date and time, ${dateLabel} ${time}. Open calendar.`}
+      onClick={(event) => onOpen(event.currentTarget)}
+      className="glacier-widget-pill relative flex shrink-0 select-none items-center gap-2.5 px-3 transition-colors hover:bg-white/10"
+      style={{ height: baseSize }}
+    >
+      <div className="flex flex-col leading-none">
+        <span className="text-[9px] font-semibold tracking-wider opacity-55">{weekday}</span>
+        <span className="mt-0.5 text-[11px] font-medium opacity-85">{dateLabel}</span>
+      </div>
+      <span className="text-[15px] font-semibold tabular-nums tracking-tight">{time}</span>
+      {profile && (
+        <span className="rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-widest opacity-70">
+          {profile}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export default function DockWindow() {
   const clusterRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
@@ -138,14 +306,13 @@ export default function DockWindow() {
   const [showTelemetryRings, setShowTelemetryRings] = useState(true);
   const [showAiUsage, setShowAiUsage] = useState(true);
   const [showQuickFolders, setShowQuickFolders] = useState(true);
-  const [clock, setClock] = useState(() => new Date());
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   const [bouncingApp, setBouncingApp] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ app: InstalledApp; x: number } | null>(null);
   const [surfaceMenuX, setSurfaceMenuX] = useState<number | null>(null);
   const [dockHovered, setDockHovered] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
-  const telemetry = useTelemetry();
   const hoverTimer = useRef<number | undefined>(undefined);
   const bounceTimer = useRef<number | undefined>(undefined);
   const pointerRafRef = useRef<number | null>(null);
@@ -157,9 +324,15 @@ export default function DockWindow() {
   const overlayOpenRef = useRef(false);
   const mouseAxis = useMotionValue(Number.POSITIVE_INFINITY);
 
+  // Keep the hidden-apps `^` button in sync with its panel (Escape, restore…).
   useEffect(() => {
-    const id = window.setInterval(() => setClock(new Date()), 1000);
-    return () => window.clearInterval(id);
+    let unlisten: (() => void) | undefined;
+    listen<{ visible: boolean }>("glacier://hidden-apps", (event) => {
+      setHiddenOpen(Boolean(event.payload?.visible));
+    })
+      .then((fn) => (unlisten = fn))
+      .catch(() => {});
+    return () => unlisten?.();
   }, []);
 
   // Poll live running Windows apps so newly opened apps appear on the dock.
@@ -653,9 +826,6 @@ export default function DockWindow() {
     });
   }, []);
 
-  const time = clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const weekday = clock.toLocaleDateString([], { weekday: "short" }).toUpperCase();
-  const dateLabel = clock.toLocaleDateString([], { day: "numeric", month: "short" });
   const dockCrossAlign = edge === "top" || edge === "left" ? "items-start" : "items-end";
   const pillStyle: CSSProperties = {
     borderRadius: attached ? 0 : "var(--glacier-radius)",
@@ -681,25 +851,6 @@ export default function DockWindow() {
   const dividerClass = vertical
     ? "relative z-10 my-1 h-px w-6 shrink-0 self-center bg-white/[0.12]"
     : "relative z-10 mx-1 h-6 w-px shrink-0 self-center bg-white/[0.12]";
-
-  const inlineWidgetLabel = (id: string, fallback: string): string => {
-    switch (id) {
-      case "cpu-monitor":
-        return `${telemetry.cpuPercent.toFixed(0)}%`;
-      case "memory-gauge":
-        return `${telemetry.ramPercent.toFixed(0)}%`;
-      case "disk-space":
-        return `${Math.round(telemetry.diskFreeGb)} GB`;
-      case "network-throughput":
-        return `↓${Math.round(telemetry.netDownBps / 1024)}K`;
-      case "top-process":
-        return telemetry.topProcess ? telemetry.topProcess.name : fallback;
-      case "battery-status":
-        return telemetry.batteryPercent !== null ? `${Math.round(telemetry.batteryPercent)}%` : fallback;
-      default:
-        return fallback;
-    }
-  };
 
   return (
     <div className={`pointer-events-none flex h-full w-full ${EDGE_ALIGN[edge]}`}>
@@ -859,7 +1010,7 @@ export default function DockWindow() {
                 </span>
                 {!vertical && (
                   <span className="max-w-[74px] truncate text-[11px] font-medium tabular-nums opacity-85">
-                    {inlineWidgetLabel(id, meta.name)}
+                    <WidgetPillLabel id={id} fallback={meta.name} />
                   </span>
                 )}
               </MotionDockItem>
@@ -973,63 +1124,17 @@ export default function DockWindow() {
           <>
             <span className={dividerClass} aria-hidden />
             <div data-no-drag className={`relative z-10 flex ${dockCrossAlign} gap-2`}>
-              {showTelemetryRings && (
-                <>
-                  <DockRingMeter
-                    label="CPU"
-                    value={telemetry.cpuPercent}
-                    tooltip={`CPU ${telemetry.cpuPercent.toFixed(0)}%`}
-                    edge={edge}
-                    mouseAxis={mouseAxis}
-                    baseSize={baseIconSize}
-                    maxScale={maxMag}
-                    onClick={() => openCommand("task_manager")}
-                  />
-                  <DockRingMeter
-                    label="RAM"
-                    value={telemetry.ramPercent}
-                    tooltip={`RAM ${telemetry.ramPercent.toFixed(0)}% (${Math.round(telemetry.ramUsedMb / 1024)}/${Math.round(telemetry.ramTotalMb / 1024)} GB)`}
-                    edge={edge}
-                    mouseAxis={mouseAxis}
-                    baseSize={baseIconSize}
-                    maxScale={maxMag}
-                    onClick={() => openCommand("task_manager")}
-                  />
-                  {telemetry.gpuPercent !== null && (
-                    <DockRingMeter
-                      label="GPU"
-                      value={telemetry.gpuPercent}
-                      tooltip={`GPU ${telemetry.gpuPercent.toFixed(0)}%`}
-                      edge={edge}
-                      mouseAxis={mouseAxis}
-                      baseSize={baseIconSize}
-                      maxScale={maxMag}
-                      onClick={() => openCommand("task_manager")}
-                    />
-                  )}
-                  {telemetry.batteryPercent !== null && (
-                    <DockRingMeter
-                      label="BAT"
-                      value={telemetry.batteryPercent}
-                      charging={telemetry.batteryCharging}
-                      tooltip={`Battery ${Math.round(telemetry.batteryPercent)}%${telemetry.batteryCharging ? " (Charging)" : ""}`}
-                      edge={edge}
-                      mouseAxis={mouseAxis}
-                      baseSize={baseIconSize}
-                      maxScale={maxMag}
-                    />
-                  )}
-                </>
-              )}
-              {showAiUsage && (
-                <AiUsageIsland
-                  vertical={vertical}
-                  mouseAxis={mouseAxis}
-                  baseSize={baseIconSize}
-                  maxScale={maxMag}
-                  onOpenChange={setAiOpen}
-                />
-              )}
+              <DockTelemetryStrip
+                showRings={showTelemetryRings}
+                showAiUsage={showAiUsage}
+                vertical={vertical}
+                mouseAxis={mouseAxis}
+                baseSize={baseIconSize}
+                maxScale={maxMag}
+                edge={edge}
+                onAiOpenChange={setAiOpen}
+                onTaskManager={() => openCommand("task_manager")}
+              />
               <MotionDockItem
                 mouseAxis={mouseAxis}
                 baseSize={baseIconSize}
@@ -1037,43 +1142,48 @@ export default function DockWindow() {
                 edge={edge}
                 vertical={vertical}
                 iconRatio={0.46}
-                tip="Hidden Apps"
+                tip={hiddenOpen ? "Hide minimized apps" : "Show minimized apps"}
                 ariaLabel="Hidden & Background Apps"
                 noDrag
                 onClick={(event) =>
+                  openCommand("toggle_hidden_apps", undefined, event.currentTarget)
+                }
+                className={`group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl transition-colors ${
+                  hiddenOpen ? "bg-white/[0.14] ring-1 ring-[var(--glacier-accent)]" : ""
+                }`}
+              >
+                <ChevronTrayIcon
+                  className={`size-full transition-transform duration-200 ${
+                    hiddenOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </MotionDockItem>
+              <DockClock
+                baseSize={baseIconSize}
+                profile={profile}
+                onOpen={(element) =>
                   openCommand(
                     "open_widget",
-                    {
-                      id: "background-apps",
-                      width: 256,
-                      height: 192,
-                    },
-                    event.currentTarget,
+                    { id: "date-card", width: 240, height: 170 },
+                    element,
                   )
                 }
+              />
+              <MotionDockItem
+                mouseAxis={mouseAxis}
+                baseSize={baseIconSize}
+                maxScale={maxMag}
+                edge={edge}
+                vertical={vertical}
+                iconRatio={0.52}
+                tip="Widgets"
+                ariaLabel="Widgets — installed and available"
+                noDrag
+                onClick={() => openCommand("open_widget_gallery")}
                 className="group glacier-widget-pill glacier-icon-glow relative grid shrink-0 place-items-center rounded-2xl"
               >
-                <ChevronTrayIcon />
+                <WidgetsIcon />
               </MotionDockItem>
-              <div
-                className="glacier-widget-pill relative flex shrink-0 select-none items-center gap-2.5 px-3"
-                style={{ height: baseIconSize }}
-              >
-                <div className="flex flex-col leading-none">
-                  <span className="text-[9px] font-semibold tracking-wider opacity-55">
-                    {weekday}
-                  </span>
-                  <span className="mt-0.5 text-[11px] font-medium opacity-85">{dateLabel}</span>
-                </div>
-                <span className="text-[15px] font-semibold tabular-nums tracking-tight">
-                  {time}
-                </span>
-                {profile && (
-                  <span className="rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-widest opacity-70">
-                    {profile}
-                  </span>
-                )}
-              </div>
             </div>
           </>
         )}

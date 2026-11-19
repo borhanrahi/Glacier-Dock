@@ -187,7 +187,7 @@ export default function TaskManagerWindow() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 6, scale: 0.97, transition: { duration: 0.09 } }}
           transition={MAC_MODAL_SPRING}
-          className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px] will-change-transform"
+          className="glacier-panel-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px] will-change-transform"
         >
           <span className="glacier-dock-sheen" aria-hidden />
           <header data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">

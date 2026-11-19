@@ -13,11 +13,11 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, Webv
 use windows::core::{w, BOOL};
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFOEXW};
+use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetWindowLongW,
-    RegisterClassW, SetWindowDisplayAffinity, SetWindowLongPtrW, SetWindowLongW, TranslateMessage,
-    GWLP_USERDATA, GWL_EXSTYLE, HWND_MESSAGE, MSG, WDA_EXCLUDEFROMCAPTURE, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_DISPLAYCHANGE, WNDCLASSW, WS_EX_TOOLWINDOW, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
+    SetWindowLongPtrW, TranslateMessage, GWLP_USERDATA, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_DISPLAYCHANGE, WNDCLASSW, WS_POPUP,
 };
 
 use crate::config::{self, DockSize, Edge};
@@ -31,6 +31,7 @@ pub struct MonitorInfo {
     pub width: i32,
     pub height: i32,
     pub primary: bool,
+    pub scale: f64,
 }
 
 static MONITORS: Mutex<Vec<MonitorInfo>> = Mutex::new(Vec::new());
@@ -70,6 +71,13 @@ unsafe extern "system" fn enum_proc(
             .trim_end_matches('\0')
             .to_string();
         let rc = info.monitorInfo.rcMonitor;
+        let mut dpi_x: u32 = 96;
+        let mut dpi_y: u32 = 96;
+        let scale = if GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y).is_ok() {
+            (dpi_x as f64 / 96.0).clamp(1.0, 3.5)
+        } else {
+            1.0
+        };
         out.push(MonitorInfo {
             device,
             x: rc.left,
@@ -77,6 +85,7 @@ unsafe extern "system" fn enum_proc(
             width: rc.right - rc.left,
             height: rc.bottom - rc.top,
             primary: info.monitorInfo.dwFlags & 1 != 0, // MONITORINFOF_PRIMARY
+            scale,
         });
     }
     BOOL(1)
@@ -92,7 +101,7 @@ pub fn monitor_for_point(x: i32, y: i32) -> Option<MonitorInfo> {
 /// for the 1.35x magnified icons.
 pub fn dock_window_rect(monitor: &MonitorInfo, edge: Edge, size: DockSize) -> (i32, i32, i32, i32) {
     let (_, bar) = size.metrics();
-    let extent = (bar + config::headroom(size)).round() as i32;
+    let extent = ((bar + config::headroom(size)) * monitor.scale).round() as i32;
     match edge {
         Edge::Bottom => (
             monitor.x,
@@ -140,6 +149,9 @@ pub fn sync_docks(app: &AppHandle) {
             Some(window) => {
                 let _ = window.set_position(PhysicalPosition::new(x, y));
                 let _ = window.set_size(PhysicalSize::new(width as u32, height as u32));
+                if let Ok(hwnd) = window.hwnd() {
+                    crate::win32::hit_test::install(app, &label, hwnd.0 as isize);
+                }
             }
             None => {
                 let url = WebviewUrl::App(PathBuf::from(format!("index.html?dock={label}")));
@@ -159,17 +171,7 @@ pub fn sync_docks(app: &AppHandle) {
                         let _ = window.set_position(PhysicalPosition::new(x, y));
                         let _ = window.set_size(PhysicalSize::new(width as u32, height as u32));
                         if let Ok(hwnd) = window.hwnd() {
-                            crate::win32::hit_test::install(hwnd.0 as isize);
-                            unsafe {
-                                let raw = HWND(hwnd.0);
-                                let ex = GetWindowLongW(raw, GWL_EXSTYLE);
-                                let _ = SetWindowLongW(
-                                    raw,
-                                    GWL_EXSTYLE,
-                                    ex | WS_EX_TOOLWINDOW.0 as i32,
-                                );
-                                let _ = SetWindowDisplayAffinity(raw, WDA_EXCLUDEFROMCAPTURE);
-                            }
+                            crate::win32::hit_test::install(app, &label, hwnd.0 as isize);
                         }
                     }
                     Err(err) => eprintln!("glacier: failed to create {label}: {err}"),
@@ -179,6 +181,9 @@ pub fn sync_docks(app: &AppHandle) {
     }
 
     config::save(app, &cfg);
+    if cfg.replace_taskbar {
+        crate::win32::taskbar::apply_work_area(&cfg);
+    }
 }
 
 /// Message-only window that rebuilds docks on display topology changes.

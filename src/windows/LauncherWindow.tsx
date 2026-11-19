@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Check, Plus, Search, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 import { useAppIcon } from "../sdk/hooks";
@@ -16,6 +17,8 @@ import {
   type PinnedApp,
 } from "../utils/apps";
 
+type FilterTab = "all" | "pinned" | Category;
+
 async function hideSelf() {
   try {
     await getCurrentWindow().hide();
@@ -24,8 +27,8 @@ async function hideSelf() {
   }
 }
 
-/** Shell icon with the initial-tile fallback, sized by the parent. */
-function AppGlyph({ app, rounded }: { app: InstalledApp; rounded?: string }) {
+/** Crisp shell icon with initial-tile fallback. */
+function AppGlyph({ app }: { app: InstalledApp }) {
   const icon = useAppIcon(app.path);
   if (icon) {
     return (
@@ -33,14 +36,14 @@ function AppGlyph({ app, rounded }: { app: InstalledApp; rounded?: string }) {
         src={icon}
         alt=""
         draggable={false}
-        className={`size-full select-none object-contain ${rounded ?? "rounded-md"}`}
+        className="size-10 select-none rounded-lg object-contain"
       />
     );
   }
   return (
     <span
-      className={`grid size-full place-items-center text-[8px] font-bold ${rounded ?? "rounded-md"}`}
-      style={{ background: `hsl(${appHue(app.name)} 70% 52% / 0.85)`, color: "#08111d" }}
+      className="grid size-10 place-items-center rounded-xl text-[12px] font-bold"
+      style={{ background: `hsl(${appHue(app.name)} 70% 52% / 0.9)`, color: "#08111d" }}
     >
       {initials(app.name)}
     </span>
@@ -48,14 +51,16 @@ function AppGlyph({ app, rounded }: { app: InstalledApp; rounded?: string }) {
 }
 
 /**
- * Categorized Start app library: instant fuzzy search plus category cards with
- * `2 x 2` nested icon previews.
+ * Modern Launchpad / App Library: category filter pills, live search, keyboard
+ * grid navigation, and crisp high-DPI icons.
  */
 export default function LauncherWindow() {
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [pinned, setPinned] = useState<PinnedApp[]>([]);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<Category | null>(null);
+  const [filter, setFilter] = useState<FilterTab>("all");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { showSeq, visible, dismiss } = useWindowMotion();
 
   useEffect(() => {
@@ -65,12 +70,21 @@ export default function LauncherWindow() {
     invoke<PinnedApp[]>("pinned_apps")
       .then(setPinned)
       .catch(() => setPinned([]));
+
+    const onFocus = () => inputRef.current?.focus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  useEffect(() => {
+    setActiveIdx(0);
+    window.setTimeout(() => inputRef.current?.focus(), 20);
+  }, [showSeq]);
+
   const togglePin = async (app: InstalledApp) => {
-    const already = pinned.some((entry) => entry.path === app.path);
+    const already = pinned.some((entry) => entry.path.toLowerCase() === app.path.toLowerCase());
     const next = already
-      ? pinned.filter((entry) => entry.path !== app.path)
+      ? pinned.filter((entry) => entry.path.toLowerCase() !== app.path.toLowerCase())
       : [...pinned, { name: app.name, path: app.path }];
     setPinned(next);
     try {
@@ -87,8 +101,28 @@ export default function LauncherWindow() {
     return map;
   }, [apps]);
 
-  const results = useMemo(() => searchApps(apps, query, 60), [apps, query]);
-  const list = query.trim() ? results : selected ? (grouped.get(selected) ?? []) : [];
+  const nonEmptyCategories = useMemo(
+    () => CATEGORIES.filter((category) => (grouped.get(category)?.length ?? 0) > 0),
+    [grouped],
+  );
+
+  const pinnedSet = useMemo(
+    () => new Set(pinned.map((entry) => entry.path.toLowerCase())),
+    [pinned],
+  );
+
+  const filtered = useMemo(() => {
+    if (query.trim()) return searchApps(apps, query, 84);
+    if (filter === "all") return apps;
+    if (filter === "pinned") {
+      return apps.filter((app) => pinnedSet.has(app.path.toLowerCase()));
+    }
+    return grouped.get(filter) ?? [];
+  }, [apps, query, filter, pinnedSet, grouped]);
+
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [query, filter]);
 
   const launch = async (app: InstalledApp) => {
     try {
@@ -96,6 +130,33 @@ export default function LauncherWindow() {
       await hideSelf();
     } catch {
       /* ignore */
+    }
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (query.trim()) setQuery("");
+      else dismiss();
+      return;
+    }
+    if (filtered.length === 0) return;
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setActiveIdx((i) => Math.min(filtered.length - 1, i + 1));
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setActiveIdx((i) => Math.max(0, i - 1));
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIdx((i) => Math.min(filtered.length - 1, i + 6));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIdx((i) => Math.max(0, i - 6));
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const target = filtered[activeIdx];
+      if (target) void launch(target);
     }
   };
 
@@ -108,118 +169,133 @@ export default function LauncherWindow() {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 6, scale: 0.97, transition: { duration: 0.09 } }}
           transition={MAC_MODAL_SPRING}
-          className="glacier-dock-glass relative flex h-full w-full flex-col overflow-hidden rounded-[18px] will-change-transform"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              if (selected) setSelected(null);
-              else dismiss();
-            }
-          }}
+          onKeyDown={onKeyDown}
           tabIndex={-1}
+          className="glacier-panel-glass relative flex h-full w-full flex-col overflow-hidden rounded-[20px] outline-none will-change-transform"
         >
-      <span className="glacier-dock-sheen" aria-hidden />
-      <div data-tauri-drag-region className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
-        {selected && (
-          <button
-            type="button"
-            onClick={() => setSelected(null)}
-            className="rounded-full bg-white/10 px-2 py-1 text-[10px]"
-          >
-            ← Back
-          </button>
-        )}
-        <input
-          autoFocus
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search for apps, settings, and documents"
-          className="h-8 flex-1 bg-transparent text-sm outline-none placeholder:opacity-45"
-        />
-        <button
-          type="button"
-          onClick={hideSelf}
-          className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] opacity-80 hover:opacity-100"
-        >
-          Close
-        </button>
-      </div>
+          <span className="glacier-dock-sheen" aria-hidden />
 
-      <div className="flex-1 overflow-y-auto p-4">
-        {!query.trim() && !selected && (
-          <>
-            <div className="mb-2 text-[10px] uppercase tracking-widest opacity-40">
-              View: Category
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              {CATEGORIES.map((category) => {
-                const items = grouped.get(category) ?? [];
+          <div
+            data-tauri-drag-region
+            className="flex items-center gap-3 border-b border-white/[0.08] px-5 py-3.5"
+          >
+            <Search className="size-4 shrink-0 text-slate-400" />
+            <input
+              ref={inputRef}
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search apps…"
+              className="h-7 flex-1 bg-transparent text-[13.5px] text-slate-100 outline-none placeholder:text-slate-500"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[10.5px] text-slate-300 hover:bg-white/[0.12]"
+              >
+                Clear
+              </button>
+            )}
+            <span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-[10.5px] font-medium tabular-nums text-slate-400">
+              {filtered.length} apps
+            </span>
+            <button
+              type="button"
+              title="Close (Esc)"
+              onClick={dismiss}
+              className="grid size-7 place-items-center rounded-full bg-white/[0.06] text-slate-300 transition hover:bg-white/[0.14] hover:text-white"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+
+          {!query.trim() && (
+            <div className="glacier-no-scrollbar flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-white/[0.05] px-5 py-2.5">
+              {(
+                [
+                  { id: "all", label: "All", count: apps.length },
+                  { id: "pinned", label: "Pinned", count: pinned.length },
+                  ...nonEmptyCategories.map((cat) => ({
+                    id: cat,
+                    label: cat,
+                    count: grouped.get(cat)?.length ?? 0,
+                  })),
+                ] as Array<{ id: FilterTab; label: string; count: number }>
+              ).map((pill) => {
+                const active = filter === pill.id;
                 return (
                   <button
-                    key={category}
+                    key={pill.id}
                     type="button"
-                    onClick={() => setSelected(category)}
-                    className="flex flex-col gap-2 rounded-xl bg-white/5 p-3 text-left transition-colors hover:bg-white/10"
+                    onClick={() => setFilter(pill.id)}
+                    className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-[11.5px] transition ${
+                      active
+                        ? "bg-sky-400/18 font-medium text-sky-200 ring-1 ring-sky-400/35"
+                        : "bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-slate-200"
+                    }`}
                   >
-                    <div className="grid grid-cols-2 gap-1">
-                      {items.slice(0, 4).map((app) => (
-                        <span key={app.path} className="grid aspect-square place-items-center">
-                          <AppGlyph app={app} />
-                        </span>
-                      ))}
-                    </div>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-[11px] font-semibold">{category}</span>
-                      <span className="text-[9px] opacity-50">{items.length}</span>
-                    </div>
+                    <span>{pill.label}</span>
+                    <span className={`text-[10px] tabular-nums ${active ? "text-sky-300/80" : "text-slate-500"}`}>
+                      {pill.count}
+                    </span>
                   </button>
                 );
               })}
             </div>
-          </>
-        )}
+          )}
 
-        {(query.trim() || selected) && (
-          <div className="grid grid-cols-6 gap-3">
-            {list.map((app) => {
-              const isPinned = pinned.some((entry) => entry.path === app.path);
-              return (
-                <div key={app.path} className="group relative">
-                  <button
-                    type="button"
-                    onClick={() => launch(app)}
-                    title={app.name}
-                    className="flex w-full flex-col items-center gap-1.5 rounded-lg p-1.5 hover:bg-white/10"
-                  >
-                    <span className="grid size-10 place-items-center">
-                      <AppGlyph app={app} rounded="rounded-lg" />
-                    </span>
-                    <span className="w-full truncate text-center text-[9px] leading-tight opacity-80">
-                      {app.name}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => togglePin(app)}
-                    title={isPinned ? "Remove from dock" : "Pin to dock"}
-                    className={`absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full text-[9px] leading-none ring-1 ring-black/30 transition-opacity ${
-                      isPinned
-                        ? "bg-[var(--glacier-accent)] text-black"
-                        : "bg-white/20 text-white opacity-0 group-hover:opacity-100"
-                    }`}
-                  >
-                    {isPinned ? "✓" : "+"}
-                  </button>
-                </div>
-              );
-            })}
-            {list.length === 0 && (
-              <div className="col-span-6 py-10 text-center text-xs opacity-50">
-                Nothing matches “{query}”.
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            {filtered.length === 0 ? (
+              <div className="grid h-full place-items-center py-12 text-center text-xs text-slate-400">
+                {query.trim() ? `Nothing matches “${query}”.` : "No apps in this view."}
+              </div>
+            ) : (
+              <div className="grid grid-cols-6 gap-2.5">
+                {filtered.map((app, idx) => {
+                  const isPinned = pinnedSet.has(app.path.toLowerCase());
+                  const isFocused = idx === activeIdx;
+                  return (
+                    <div
+                      key={app.path}
+                      className={`group relative rounded-2xl border p-2.5 transition ${
+                        isFocused
+                          ? "border-sky-400/40 bg-white/[0.07]"
+                          : "border-transparent hover:border-white/[0.08] hover:bg-white/[0.055]"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onPointerEnter={() => setActiveIdx(idx)}
+                        onClick={() => launch(app)}
+                        title={app.name}
+                        className="flex w-full flex-col items-center"
+                      >
+                        <span className="grid size-14 place-items-center rounded-2xl bg-white/[0.04] ring-1 ring-white/[0.06] transition-transform duration-150 group-hover:-translate-y-0.5">
+                          <AppGlyph app={app} />
+                        </span>
+                        <span className="mt-1.5 line-clamp-2 h-7 w-full text-center text-[11px] font-medium leading-tight text-slate-200">
+                          {app.name}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => togglePin(app)}
+                        title={isPinned ? "Unpin from dock" : "Pin to dock"}
+                        className={`absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-full transition ${
+                          isPinned
+                            ? "bg-sky-400 text-slate-950 shadow-sm"
+                            : "bg-white/15 text-white opacity-0 hover:bg-white/25 group-hover:opacity-100"
+                        }`}
+                      >
+                        {isPinned ? <Check className="size-3" /> : <Plus className="size-3" />}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
-        )}
-      </div>
         </motion.div>
       )}
     </AnimatePresence>

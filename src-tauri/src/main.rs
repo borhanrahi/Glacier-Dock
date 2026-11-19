@@ -1,8 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(linker_messages)]
 
 fn main() {
     #[cfg(windows)]
     {
+        unsafe {
+            use windows::Win32::UI::HiDpi::{
+                SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            };
+            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        }
+
         // Uninstaller / recovery entry point. Must work with no Tauri app, no
         // WebView2 and no config: it only replays the taskbar journal.
         if std::env::args().any(|arg| arg == "--restore-taskbar") {

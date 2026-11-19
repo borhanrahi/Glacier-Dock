@@ -47,12 +47,12 @@ pub enum DockSize {
 }
 
 impl DockSize {
-    /// (base icon DIPs, pill height DIPs) from the design spec.
+    /// (base icon DIPs, pill height DIPs) matched to the Windows 11 taskbar.
     pub fn metrics(self) -> (f64, f64) {
         match self {
-            DockSize::Small => (36.0, 44.0),
-            DockSize::Medium => (42.0, 52.0),
-            DockSize::Large => (48.0, 60.0),
+            DockSize::Small => (32.0, 40.0),
+            DockSize::Medium => (38.0, 48.0),
+            DockSize::Large => (44.0, 56.0),
         }
     }
 }
@@ -109,7 +109,7 @@ impl Default for Appearance {
             magnification: 1.8,
             size: DockSize::Medium,
             shape: Shape::Floating,
-            edge_margin: 10.0,
+            edge_margin: 4.0,
             width_mode: WidthMode::FitContent,
         }
     }
@@ -422,6 +422,14 @@ pub fn load(app: &AppHandle) -> AppConfig {
         migrated = true;
     }
 
+    if cfg.config_version < 3 {
+        if (cfg.appearance.edge_margin - 10.0).abs() < 0.5 {
+            cfg.appearance.edge_margin = 4.0;
+        }
+        cfg.config_version = 3;
+        migrated = true;
+    }
+
     // First launch (or an upgrade from a build without pins): write the
     // defaults once so the dock has something sane to show and so emptying the
     // dock later is respected.
@@ -467,5 +475,5 @@ pub fn dock_for_monitor(cfg: &mut AppConfig, monitor: &str) -> DockInstance {
 /// and popovers never clip inside the OS window.
 pub fn headroom(size: DockSize) -> f64 {
     let (_, bar) = size.metrics();
-    (bar * 1.1) + 180.0
+    (bar * 0.9) + 148.0
 }

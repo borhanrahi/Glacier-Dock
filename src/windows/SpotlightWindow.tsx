@@ -167,7 +167,7 @@ export default function SpotlightWindow() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97, transition: { duration: 0.09 } }}
             transition={MAC_MODAL_SPRING}
-            className="glacier-dock-glass relative w-full overflow-hidden rounded-[18px] will-change-transform"
+            className="glacier-panel-glass relative w-full overflow-hidden rounded-[18px] will-change-transform"
           >
         <span className="glacier-dock-sheen" aria-hidden />
         <div className="flex items-center gap-2 px-3 py-2.5">

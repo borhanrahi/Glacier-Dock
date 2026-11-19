@@ -12,9 +12,11 @@ import { motion } from "motion/react";
 import {
   Activity,
   AppWindow,
+  Check,
   Info,
   LayoutGrid,
   Palette,
+  Pipette,
   SlidersHorizontal,
   Zap,
 } from "lucide-react";
@@ -23,7 +25,7 @@ import glacier, { type InstalledWidget } from "../sdk/bridge";
 import { useAppIcon, useTelemetry } from "../sdk/hooks";
 import { MAC_TAB_SPRING } from "../sdk/motion";
 import type { InstalledApp, PinnedApp } from "../utils/apps";
-import { applyAccent, applyPreset, applyTintAlpha } from "../styles/theme";
+import { applyAccent } from "../styles/theme";
 import {
   CATEGORY_META,
   CATEGORY_ORDER,
@@ -120,25 +122,74 @@ const TABS: Array<{ id: TabId; label: string; icon: ReactNode }> = [
   { id: "about", label: "About", icon: <Info className="size-4" strokeWidth={1.8} /> },
 ];
 
-const PRESETS: Array<{ id: string; label: string; swatch: string }> = [
-  { id: "liquid-glass", label: "Liquid Glass", swatch: "linear-gradient(135deg,#0f172a,#38bdf8)" },
-  { id: "ios-glass", label: "iOS Glass", swatch: "linear-gradient(135deg,#e2e8f0,#ffffff)" },
-  { id: "midnight", label: "Midnight", swatch: "linear-gradient(135deg,#101827,#1e293b)" },
-  { id: "prism", label: "Prism", swatch: "linear-gradient(135deg,#181822,#8b5cf6)" },
-  { id: "black", label: "Black", swatch: "linear-gradient(135deg,#09090b,#27272a)" },
-  { id: "white", label: "White", swatch: "linear-gradient(135deg,#f8fafc,#e2e8f0)" },
+const PRESETS: Array<{
+  id: string;
+  label: string;
+  rgb: [number, number, number];
+  light?: boolean;
+  swatch: string;
+}> = [
+  {
+    id: "liquid-glass",
+    label: "Liquid Glass",
+    rgb: [16, 20, 28],
+    swatch: "linear-gradient(135deg,#0f172a,#1e3a5f 60%,#38bdf8)",
+  },
+  {
+    id: "ios-glass",
+    label: "iOS Glass",
+    rgb: [245, 248, 255],
+    light: true,
+    swatch: "linear-gradient(135deg,#cbd5e1,#f8fafc)",
+  },
+  {
+    id: "midnight",
+    label: "Midnight",
+    rgb: [20, 24, 36],
+    swatch: "linear-gradient(135deg,#0b1120,#1e293b)",
+  },
+  {
+    id: "prism",
+    label: "Prism",
+    rgb: [24, 24, 34],
+    swatch: "linear-gradient(135deg,#181826,#7c3aed)",
+  },
+  {
+    id: "black",
+    label: "Black",
+    rgb: [10, 12, 16],
+    swatch: "linear-gradient(135deg,#050608,#18181b)",
+  },
+  {
+    id: "white",
+    label: "White",
+    rgb: [244, 246, 250],
+    light: true,
+    swatch: "linear-gradient(135deg,#e2e8f0,#ffffff)",
+  },
+];
+
+const ACCENT_SWATCHES = [
+  "#38BDF8",
+  "#5EEAD4",
+  "#818CF8",
+  "#A78BFA",
+  "#F472B6",
+  "#FB923C",
+  "#34D399",
+  "#E2E8F0",
 ];
 
 /* ------------------------------------------------------------- primitives */
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <section className="mb-5">
-      <header className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--glacier-text-muted)]">
+    <section className="mb-6">
+      <header className="mb-2.5 flex items-baseline justify-between">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
           {title}
         </h3>
-        {hint && <span className="text-[10px] text-[var(--glacier-text-muted)]">{hint}</span>}
+        {hint && <span className="text-[11px] text-slate-500">{hint}</span>}
       </header>
       <div className="space-y-2">{children}</div>
     </section>
@@ -160,17 +211,17 @@ function Toggle({
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--glacier-border)] bg-white/5 px-3 py-2 text-left hover:bg-white/10"
+      className="flex w-full items-center justify-between gap-4 rounded-xl border border-white/[0.07] bg-[#111827]/80 px-3.5 py-2.5 text-left transition hover:border-white/[0.13] hover:bg-[#151e30]"
     >
       <span className="min-w-0">
-        <span className="block text-[12px]">{label}</span>
-        {hint && <span className="block text-[10px] leading-snug opacity-50">{hint}</span>}
+        <span className="block text-[12.5px] font-medium text-slate-100">{label}</span>
+        {hint && <span className="mt-0.5 block text-[11px] leading-snug text-slate-400">{hint}</span>}
       </span>
       <span
         className="relative h-5 w-9 shrink-0 rounded-full transition-all duration-200"
         style={{
-          background: checked ? "var(--glacier-aurora-line)" : "rgba(255,255,255,0.16)",
-          boxShadow: checked ? "0 0 10px rgba(56, 189, 248, 0.35)" : "none",
+          background: checked ? "var(--glacier-accent)" : "rgba(255,255,255,0.14)",
+          boxShadow: checked ? "0 0 12px rgba(56, 189, 248, 0.35)" : "none",
         }}
       >
         <span
@@ -199,11 +250,12 @@ function Slider({
   suffix?: string;
   onChange: (next: number) => void;
 }) {
+  const pct = max > min ? Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)) : 0;
   return (
-    <label className="block rounded-lg border border-[var(--glacier-border)] bg-white/5 px-3 py-2">
-      <span className="flex justify-between text-[11px]">
-        <span>{label}</span>
-        <span className="tabular-nums opacity-60">
+    <label className="block rounded-xl border border-white/[0.07] bg-[#111827]/80 px-3.5 py-2.5 transition hover:border-white/[0.13]">
+      <span className="flex items-center justify-between text-[12px]">
+        <span className="font-medium text-slate-100">{label}</span>
+        <span className="rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] font-medium tabular-nums text-sky-300">
           {value}
           {suffix}
         </span>
@@ -215,7 +267,10 @@ function Slider({
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="mt-1 w-full accent-[var(--glacier-accent)]"
+        className="glacier-slider mt-2.5 h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none"
+        style={{
+          background: `linear-gradient(to right, var(--glacier-accent) 0%, var(--glacier-accent) ${pct}%, rgba(255,255,255,0.12) ${pct}%, rgba(255,255,255,0.12) 100%)`,
+        }}
       />
     </label>
   );
@@ -231,14 +286,16 @@ function Segmented<T extends string>({
   onChange: (next: T) => void;
 }) {
   return (
-    <div className="flex gap-1 rounded-lg border border-[var(--glacier-border)] bg-white/5 p-1">
+    <div className="flex gap-1 rounded-xl border border-white/[0.07] bg-[#0d1320] p-1">
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           onClick={() => onChange(option.value)}
-          className={`flex-1 rounded-md px-2 py-1 text-[11px] transition-colors ${
-            value === option.value ? "bg-[var(--glacier-accent)]/30 font-semibold" : "hover:bg-white/10"
+          className={`flex-1 rounded-lg px-2.5 py-1.5 text-[11.5px] transition-colors ${
+            value === option.value
+              ? "bg-sky-400/15 font-semibold text-sky-200 ring-1 ring-sky-400/35 shadow-sm"
+              : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
           }`}
         >
           {option.label}
@@ -260,14 +317,14 @@ function TextField({
   onChange: (next: string) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glacier-border)] bg-white/5 px-3 py-2 text-[11px]">
-      <span className="shrink-0">{label}</span>
+    <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#111827]/80 px-3.5 py-2.5 text-[12px]">
+      <span className="shrink-0 font-medium text-slate-200">{label}</span>
       <input
         value={value}
         placeholder={placeholder}
         spellCheck={false}
         onChange={(event) => onChange(event.target.value)}
-        className="w-56 rounded border border-[var(--glacier-border)] bg-black/25 px-2 py-1 text-right text-[11px] outline-none focus:border-[var(--glacier-accent)]"
+        className="w-56 rounded-lg border border-white/[0.08] bg-[#090d16] px-2.5 py-1 text-right text-[11.5px] text-slate-100 outline-none focus:border-[var(--glacier-accent)]"
       />
     </label>
   );
@@ -291,11 +348,9 @@ export default function SettingsWindow() {
       .catch((error: unknown) => setStatus(String(error)));
   }, []);
 
-  // Live appearance preview while editing.
+  // Only propagate accent CSS var inside SettingsWindow so dock tintAlpha never washes out Settings.
   useEffect(() => {
     if (!cfg) return;
-    applyPreset(cfg.appearance.preset);
-    applyTintAlpha(cfg.appearance.tintAlpha);
     applyAccent(cfg.appearance.accent);
   }, [cfg]);
 
@@ -323,22 +378,32 @@ export default function SettingsWindow() {
   };
 
   return (
-    <div className="glacier-dock-glass relative flex h-screen w-screen overflow-hidden text-[var(--glacier-text)]">
-      <span className="glacier-dock-sheen" aria-hidden />
-      <aside className="flex w-52 shrink-0 flex-col border-r border-[var(--glacier-border)] bg-black/25 p-3">
-        <div data-tauri-drag-region className="mb-4 flex items-center gap-2.5 px-1 py-2">
+    <div className="relative flex h-screen w-screen overflow-hidden bg-[#0b101b] text-slate-100">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 75% 40% at 62% 0%, rgba(56, 189, 248, 0.10), transparent 70%)",
+        }}
+      />
+
+      <aside className="relative z-10 flex w-56 shrink-0 flex-col border-r border-white/[0.07] bg-[#070b13] p-3.5">
+        <div data-tauri-drag-region className="mb-5 flex items-center gap-2.5 px-1.5 py-1.5">
           <span
-            className="grid size-7 place-items-center rounded-lg text-sm font-bold text-[#08111d] shadow-sm"
+            className="grid size-8 place-items-center rounded-xl text-sm font-bold text-[#08111d] shadow-md"
             style={{ background: "var(--glacier-aurora)" }}
           >
             ❄
           </span>
           <div>
-            <div className="text-[12px] font-semibold leading-none">Glacier Dock</div>
-            <div className="mt-0.5 text-[9px] uppercase tracking-widest opacity-45">Settings</div>
+            <div className="text-[13px] font-semibold leading-none text-white">Glacier Dock</div>
+            <div className="mt-1 text-[10px] font-medium uppercase tracking-widest text-slate-400">
+              Settings
+            </div>
           </div>
         </div>
-        <nav className="flex-1 space-y-0.5">
+        <nav className="flex-1 space-y-1">
           {TABS.map((entry) => {
             const active = tab === entry.id;
             return (
@@ -346,60 +411,66 @@ export default function SettingsWindow() {
                 key={entry.id}
                 type="button"
                 onClick={() => setTab(entry.id)}
-                className={`relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[12px] transition-colors ${
-                  active ? "bg-white/[0.09] font-semibold" : "opacity-80 hover:bg-white/[0.06] hover:opacity-100"
+                className={`relative flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[12.5px] transition-colors ${
+                  active
+                    ? "bg-white/[0.08] font-semibold text-white"
+                    : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
                 }`}
               >
                 {active && (
                   <motion.span
                     layoutId="settings-active-tab"
                     transition={MAC_TAB_SPRING}
-                    className="absolute left-0.5 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full"
+                    className="absolute left-1 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full"
                     style={{ background: "var(--glacier-aurora)" }}
                   />
                 )}
-                <span className="grid w-4 place-items-center opacity-75">{entry.icon}</span>
+                <span className={`grid w-4 place-items-center ${active ? "text-sky-300" : "opacity-75"}`}>
+                  {entry.icon}
+                </span>
                 {entry.label}
               </button>
             );
           })}
         </nav>
-        <div className="mt-2 rounded-lg bg-white/5 p-2 text-[9px] leading-snug opacity-60">
+        <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-2.5 text-[10px] leading-relaxed text-slate-400">
           Everything is stored locally in {`%APPDATA%\\GlacierDock`}. No telemetry leaves this
           machine.
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col">
+      <main className="relative z-10 flex min-w-0 flex-1 flex-col">
         <header
           data-tauri-drag-region
-          className="flex items-center justify-between border-b border-[var(--glacier-border)] px-5 py-3"
+          className="flex items-center justify-between border-b border-white/[0.07] bg-[#0b101b]/90 px-6 py-3.5"
         >
           <div>
-            <h1 className="text-sm font-semibold">{TABS.find((entry) => entry.id === tab)?.label}</h1>
-            <p className="text-[10px] opacity-50">{status}</p>
+            <h1 className="text-[15px] font-semibold text-white">
+              {TABS.find((entry) => entry.id === tab)?.label}
+            </h1>
+            <p className="text-[11px] text-slate-400">{status}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => glacier.system.launcher().catch(() => {})}
-              className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] hover:bg-white/20"
+              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 text-[11.5px] font-medium text-slate-200 transition hover:bg-white/[0.10]"
             >
               Launchpad
             </button>
             <button
               type="button"
               onClick={() => glacier.system.hide().catch(() => {})}
-              className="rounded-md bg-white/10 px-2.5 py-1 text-[11px] hover:bg-white/20"
+              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 text-[11.5px] font-medium text-slate-200 transition hover:bg-white/[0.10]"
             >
               Close
             </button>
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           {!cfg ? (
-            <p className="text-[12px] opacity-60">Loading…</p>
+            <p className="text-[12px] text-slate-400">Loading…</p>
           ) : (
             <motion.div
               key={tab}
@@ -426,8 +497,8 @@ export default function SettingsWindow() {
           )}
         </div>
 
-        <footer className="flex items-center justify-between border-t border-[var(--glacier-border)] px-5 py-2.5">
-          <span className="text-[10px] opacity-50">
+        <footer className="flex items-center justify-between border-t border-white/[0.07] bg-[#080c15] px-6 py-3">
+          <span className="text-[11px] text-slate-400">
             {dirty ? "Unsaved changes" : "All changes saved"} · {WIDGETS.length} widgets in the catalog
           </span>
           <div className="flex gap-2">
@@ -442,7 +513,7 @@ export default function SettingsWindow() {
                   })
                   .catch(() => {})
               }
-              className="rounded-md bg-white/10 px-3 py-1.5 text-[11px] hover:bg-white/20"
+              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 text-[11.5px] font-medium text-slate-200 transition hover:bg-white/[0.10]"
             >
               Restore defaults
             </button>
@@ -453,7 +524,7 @@ export default function SettingsWindow() {
                 setDirty(false);
                 setStatus("Reverted");
               })}
-              className="rounded-md bg-white/10 px-3 py-1.5 text-[11px] hover:bg-white/20"
+              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 text-[11.5px] font-medium text-slate-200 transition hover:bg-white/[0.10]"
             >
               Revert
             </button>
@@ -461,7 +532,8 @@ export default function SettingsWindow() {
               type="button"
               disabled={!dirty}
               onClick={save}
-              className="rounded-md bg-[var(--glacier-accent)] px-3 py-1.5 text-[11px] font-semibold text-slate-950 disabled:opacity-40"
+              className="rounded-lg px-3.5 py-1.5 text-[11.5px] font-semibold text-slate-950 transition hover:brightness-110 disabled:opacity-35"
+              style={{ background: "var(--glacier-accent)" }}
             >
               Save changes
             </button>
@@ -484,53 +556,84 @@ function AppearanceTab({
   patch: <K extends keyof SettingsConfig>(key: K, value: SettingsConfig[K]) => void;
 }) {
   const appearance = cfg.appearance;
+  const activePreset = PRESETS.find((p) => p.id === appearance.preset) ?? PRESETS[0];
+  const [pr, pg, pb] = activePreset.rgb;
+  const topA = Math.min(1, appearance.tintAlpha * 0.92).toFixed(3);
+  const botA = Math.min(1, appearance.tintAlpha * 1.12).toFixed(3);
+
   return (
     <>
       <Section title="Live preview" hint={`${appearance.preset} · ${Math.round(appearance.tintAlpha * 100)}% tint`}>
         <div
-          className="relative flex h-24 items-end justify-center overflow-hidden rounded-xl border border-[var(--glacier-border)] pb-2.5"
+          className="relative flex h-28 items-end justify-center overflow-hidden rounded-2xl border border-white/[0.08] pb-3 shadow-inner"
           style={{
             background:
-              "radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.25), transparent 55%), radial-gradient(circle at 80% 30%, rgba(94, 234, 212, 0.22), transparent 50%), linear-gradient(180deg, #0b1322 0%, #111f33 100%)",
+              "radial-gradient(circle at 18% 20%, rgba(56, 189, 248, 0.30), transparent 52%), radial-gradient(circle at 82% 28%, rgba(167, 139, 250, 0.25), transparent 48%), linear-gradient(180deg, #091326 0%, #102038 100%)",
           }}
         >
-          <div className="glacier-dock-glass relative flex items-center gap-2 rounded-2xl px-3 py-1.5">
-            <span className="glacier-dock-sheen" aria-hidden />
-            {["#38BDF8", "#5EEAD4", "#818CF8", "#F472B6"].map((bg, idx) => (
-              <span key={bg} className="relative grid size-7 place-items-center rounded-lg shadow-sm" style={{ background: bg }}>
+          <div
+            className="relative flex items-center gap-2 rounded-2xl border px-3 py-1.5 backdrop-blur-md"
+            style={{
+              background: `linear-gradient(180deg, rgba(${pr}, ${pg}, ${pb}, ${topA}) 0%, rgba(${pr}, ${pg}, ${pb}, ${botA}) 100%)`,
+              borderColor: activePreset.light ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.16)",
+              color: activePreset.light ? "#0f172a" : "#f1f5f9",
+              boxShadow: "0 10px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255,255,255,0.22)",
+            }}
+          >
+            {[appearance.accent, "#5EEAD4", "#818CF8", "#F472B6"].map((bg, idx) => (
+              <span key={`${bg}-${idx}`} className="relative grid size-7 place-items-center rounded-lg shadow-sm" style={{ background: bg }}>
                 {idx === 0 && (
                   <span
                     className="absolute -bottom-1 h-[2.5px] w-3 rounded-full"
-                    style={{ background: "var(--glacier-aurora-line)" }}
+                    style={{ background: appearance.accent }}
                   />
                 )}
               </span>
             ))}
-            <span className="mx-0.5 h-5 w-px bg-white/15" />
-            <span className="glacier-widget-pill px-2 py-1 text-[10px] font-semibold tabular-nums">
+            <span className={`mx-0.5 h-5 w-px ${activePreset.light ? "bg-slate-900/15" : "bg-white/15"}`} />
+            <span
+              className={`rounded-lg px-2 py-1 text-[10px] font-semibold tabular-nums ${
+                activePreset.light ? "bg-slate-900/10 text-slate-900" : "bg-white/10 text-slate-100"
+              }`}
+            >
               14:32
             </span>
           </div>
         </div>
       </Section>
 
-      <Section title="Preset" hint="Applies to every window">
-        <div className="grid grid-cols-6 gap-2">
-          {PRESETS.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              onClick={() => patchAppearance({ preset: preset.id })}
-              className={`rounded-xl border p-2 text-left transition-transform hover:scale-[1.02] ${
-                appearance.preset === preset.id
-                  ? "border-[var(--glacier-accent)]"
-                  : "border-[var(--glacier-border)]"
-              }`}
-            >
-              <span className="mb-1.5 block h-10 rounded-lg" style={{ background: preset.swatch }} />
-              <span className="text-[10px]">{preset.label}</span>
-            </button>
-          ))}
+      <Section title="Preset" hint="Applies to every dock & glass overlay">
+        <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
+          {PRESETS.map((preset) => {
+            const active = appearance.preset === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => patchAppearance({ preset: preset.id })}
+                className={`group relative rounded-xl border p-2 text-left transition ${
+                  active
+                    ? "border-sky-400/70 bg-sky-400/10 ring-1 ring-sky-400/35"
+                    : "border-white/[0.07] bg-[#111827]/80 hover:border-white/[0.14] hover:bg-[#151e30]"
+                }`}
+              >
+                <span
+                  className="mb-2 flex h-11 items-end justify-center rounded-lg p-1.5 shadow-inner"
+                  style={{ background: preset.swatch }}
+                >
+                  <span
+                    className={`h-2 w-8 rounded-full ${
+                      preset.light ? "bg-slate-900/25" : "bg-white/30"
+                    }`}
+                  />
+                </span>
+                <span className="flex items-center justify-between text-[11px] font-medium text-slate-200">
+                  <span>{preset.label}</span>
+                  {active && <Check className="size-3 text-sky-300" />}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </Section>
 
@@ -543,15 +646,39 @@ function AppearanceTab({
           step={0.02}
           onChange={(value) => patchAppearance({ tintAlpha: value })}
         />
-        <label className="flex items-center justify-between rounded-lg border border-[var(--glacier-border)] bg-white/5 px-3 py-2 text-[11px]">
-          <span>Accent colour</span>
-          <input
-            type="color"
-            value={appearance.accent}
-            onChange={(event) => patchAppearance({ accent: event.target.value })}
-            className="h-6 w-16 rounded border border-white/20 bg-transparent"
-          />
-        </label>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#111827]/80 px-3.5 py-2.5 text-[12px]">
+          <span className="font-medium text-slate-100">Accent colour</span>
+          <div className="flex items-center gap-1.5">
+            {ACCENT_SWATCHES.map((swatch) => {
+              const selected = appearance.accent.toLowerCase() === swatch.toLowerCase();
+              return (
+                <button
+                  key={swatch}
+                  type="button"
+                  title={swatch}
+                  onClick={() => patchAppearance({ accent: swatch })}
+                  className={`size-5 rounded-full transition-transform hover:scale-110 ${
+                    selected ? "ring-2 ring-white ring-offset-2 ring-offset-[#111827]" : "ring-1 ring-white/20"
+                  }`}
+                  style={{ background: swatch }}
+                />
+              );
+            })}
+            <label
+              title="Custom colour"
+              className="relative grid size-6 cursor-pointer place-items-center rounded-full border border-white/20 bg-white/5 transition hover:bg-white/15"
+              style={{ background: appearance.accent }}
+            >
+              <Pipette className="size-3 text-slate-950 drop-shadow-[0_0_2px_rgba(255,255,255,0.9)]" />
+              <input
+                type="color"
+                value={appearance.accent}
+                onChange={(event) => patchAppearance({ accent: event.target.value })}
+                className="sr-only"
+              />
+            </label>
+          </div>
+        </div>
         <Toggle
           label="Chameleon tint"
           hint="Tint the glass with the current wallpaper accent."
@@ -589,15 +716,15 @@ function AppearanceTab({
           ]}
           onChange={(value) => patchAppearance({ iconPlate: value })}
         />
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--glacier-border)] bg-white/5 px-3 py-2 text-[11px]">
-          <span className="opacity-75">
-            Drop <code className="rounded bg-black/30 px-1 py-0.5 text-[10px]">appname.png</code> or{" "}
-            <code className="rounded bg-black/30 px-1 py-0.5 text-[10px]">.svg</code> into your Icons folder.
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#111827]/80 px-3.5 py-2.5 text-[11.5px]">
+          <span className="text-slate-300">
+            Drop <code className="rounded bg-black/40 px-1.5 py-0.5 text-[10.5px] text-sky-300">appname.png</code> or{" "}
+            <code className="rounded bg-black/40 px-1.5 py-0.5 text-[10.5px] text-sky-300">.svg</code> into your Icons folder.
           </span>
           <button
             type="button"
             onClick={() => invoke("open_icons_dir").catch(() => {})}
-            className="shrink-0 rounded-md bg-white/10 px-2.5 py-1 text-[10px] hover:bg-white/20"
+            className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-slate-200 transition hover:bg-white/[0.12]"
           >
             Open Icons Folder
           </button>
@@ -638,6 +765,19 @@ function AppearanceTab({
   );
 }
 
+function SmallAppIcon({ path }: { path: string }) {
+  const icon = useAppIcon(path);
+  return (
+    <span className="grid size-6 shrink-0 place-items-center">
+      {icon ? (
+        <img src={icon} alt="" draggable={false} className="size-6 object-contain" />
+      ) : (
+        <span className="size-6 rounded-md bg-white/10" />
+      )}
+    </span>
+  );
+}
+
 function PinRow({
   app,
   first,
@@ -653,25 +793,17 @@ function PinRow({
   onDown: () => void;
   onRemove: () => void;
 }) {
-  const icon = useAppIcon(app.path);
-
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-white/5 px-2 py-1.5">
-      <span className="grid size-6 shrink-0 place-items-center">
-        {icon ? (
-          <img src={icon} alt="" draggable={false} className="size-6 object-contain" />
-        ) : (
-          <span className="size-6 rounded-md bg-white/10" />
-        )}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-[11px]">{app.name}</span>
-      <button type="button" disabled={first} onClick={onUp} className="rounded px-1 text-[10px] disabled:opacity-25">
+    <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.06] bg-[#111827]/80 px-3 py-2">
+      <SmallAppIcon path={app.path} />
+      <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-slate-200">{app.name}</span>
+      <button type="button" disabled={first} onClick={onUp} className="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-25">
         ↑
       </button>
-      <button type="button" disabled={last} onClick={onDown} className="rounded px-1 text-[10px] disabled:opacity-25">
+      <button type="button" disabled={last} onClick={onDown} className="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-25">
         ↓
       </button>
-      <button type="button" onClick={onRemove} className="rounded px-1 text-[10px] hover:text-red-300">
+      <button type="button" onClick={onRemove} className="rounded-md px-1.5 py-0.5 text-[11px] text-slate-400 hover:bg-rose-500/20 hover:text-rose-300">
         ×
       </button>
     </div>
@@ -714,7 +846,7 @@ function PinnedAppsSection({
   return (
     <Section title="Dock apps" hint={`${pins.length} pinned`}>
       {pins.length === 0 && (
-        <p className="text-[11px] opacity-50">The dock is empty. Add an app below.</p>
+        <p className="text-[11.5px] text-slate-500">The dock is empty. Add an app below.</p>
       )}
       {pins.map((app, index) => (
         <PinRow
@@ -732,22 +864,30 @@ function PinnedAppsSection({
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Search installed apps to add…"
-        className="w-full rounded-md bg-white/5 px-2.5 py-1.5 text-[11px] outline-none placeholder:opacity-40"
+        className="w-full rounded-xl border border-white/[0.08] bg-[#090d16] px-3 py-2 text-[12px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[var(--glacier-accent)]"
       />
       <div className="space-y-1">
-        {matches.map((app) => (
-          <div key={app.path} className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-white/5">
-            <span className="min-w-0 flex-1 truncate text-[11px] opacity-80">{app.name}</span>
-            <button
-              type="button"
-              disabled={has(app.path)}
-              onClick={() => setPins([...pins, { name: app.name, path: app.path }])}
-              className="rounded bg-[var(--glacier-accent)]/30 px-2 py-0.5 text-[10px] hover:bg-[var(--glacier-accent)]/50 disabled:opacity-30"
-            >
-              {has(app.path) ? "pinned" : "add"}
-            </button>
-          </div>
-        ))}
+        {matches.map((app) => {
+          const isPinned = has(app.path);
+          return (
+            <div key={app.path} className="flex items-center gap-2.5 rounded-xl px-2.5 py-1.5 transition hover:bg-white/[0.04]">
+              <SmallAppIcon path={app.path} />
+              <span className="min-w-0 flex-1 truncate text-[12px] text-slate-300">{app.name}</span>
+              <button
+                type="button"
+                disabled={isPinned}
+                onClick={() => setPins([...pins, { name: app.name, path: app.path }])}
+                className={`rounded-lg px-2.5 py-1 text-[10.5px] font-medium transition ${
+                  isPinned
+                    ? "bg-white/[0.05] text-slate-500"
+                    : "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30 hover:bg-sky-400/25"
+                }`}
+              >
+                {isPinned ? "Pinned" : "+ Pin"}
+              </button>
+            </div>
+          );
+        })}
       </div>
     </Section>
   );
@@ -782,7 +922,7 @@ function DockTab({
         <button
           type="button"
           onClick={() => invoke("restore_native_taskbar").catch(() => {})}
-          className="rounded-md bg-white/10 px-3 py-1.5 text-[11px] hover:bg-white/20"
+          className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3.5 py-2 text-[11.5px] font-medium text-slate-200 transition hover:bg-white/[0.10]"
         >
           Restore the Windows taskbar now
         </button>
@@ -857,9 +997,11 @@ function DockTab({
           cfg.docks.map((dock) => (
             <div
               key={dock.monitor || "primary"}
-              className="rounded-lg border border-[var(--glacier-border)] bg-white/5 p-2.5"
+              className="rounded-xl border border-white/[0.07] bg-[#111827]/80 p-3"
             >
-              <div className="mb-1.5 truncate text-[11px] font-medium">{dock.monitor || "Primary display"}</div>
+              <div className="mb-2 truncate text-[12px] font-medium text-slate-200">
+                {dock.monitor || "Primary display"}
+              </div>
               <Segmented
                 value={dock.edge}
                 options={[
@@ -992,36 +1134,36 @@ function WidgetsTab({
       </Section>
 
       <Section title="Catalog" hint={`${WIDGETS.length} widgets · ${installed.length} installed`}>
-        <div className="flex gap-1.5">
+        <div className="flex gap-2">
           <input
             value={query}
             placeholder="Search widgets…"
             onChange={(event) => setQuery(event.target.value)}
-            className="flex-1 rounded-md border border-[var(--glacier-border)] bg-black/25 px-2.5 py-1.5 text-[11px] outline-none focus:border-[var(--glacier-accent)]"
+            className="flex-1 rounded-xl border border-white/[0.08] bg-[#090d16] px-3 py-2 text-[12px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[var(--glacier-accent)]"
           />
           <select
             value={category}
             onChange={(event) => setCategory(event.target.value as WidgetCategory | "all")}
-            className="rounded-md border border-[var(--glacier-border)] bg-black/25 px-2 py-1.5 text-[11px] outline-none"
+            className="rounded-xl border border-white/[0.08] bg-[#090d16] px-3 py-2 text-[12px] text-slate-100 outline-none"
           >
-            <option value="all" className="bg-slate-900">
+            <option value="all" className="bg-[#0b101b]">
               All categories
             </option>
             {CATEGORY_ORDER.map((key) => (
-              <option key={key} value={key} className="bg-slate-900">
+              <option key={key} value={key} className="bg-[#0b101b]">
                 {CATEGORY_META[key].label}
               </option>
             ))}
           </select>
         </div>
 
-        <div className="grid max-h-[46vh] grid-cols-2 gap-2 overflow-y-auto pr-1">
+        <div className="grid max-h-[46vh] grid-cols-2 gap-2.5 overflow-y-auto pr-1">
           {results.map((widget) => {
             const isInstalled = installedIds.has(widget.id);
             return (
               <div
                 key={widget.id}
-                className="flex flex-col justify-between gap-1.5 rounded-lg border border-[var(--glacier-border)] bg-white/5 p-2.5"
+                className="flex flex-col justify-between gap-2 rounded-xl border border-white/[0.07] bg-[#111827]/80 p-3 transition hover:border-white/[0.13]"
               >
                 <div>
                   <div className="flex items-center justify-between gap-1">
@@ -1082,7 +1224,7 @@ function WidgetsTab({
       </Section>
 
       <Section title="Community store" hint={message || "1-click install"}>
-        <div className="flex gap-1.5">
+        <div className="flex gap-2">
           <input
             value={storeUrl}
             placeholder="https://example.com/glacier-index.json"
@@ -1090,13 +1232,13 @@ function WidgetsTab({
               setStoreUrl(event.target.value);
               patch("advanced", { ...cfg.advanced, storeUrl: event.target.value });
             }}
-            className="flex-1 rounded-md border border-[var(--glacier-border)] bg-black/25 px-2.5 py-1.5 text-[11px] outline-none focus:border-[var(--glacier-accent)]"
+            className="flex-1 rounded-xl border border-white/[0.08] bg-[#090d16] px-3 py-2 text-[12px] text-slate-100 outline-none placeholder:text-slate-500 focus:border-[var(--glacier-accent)]"
           />
           <button
             type="button"
             disabled={busy === "index" || !storeUrl}
             onClick={refresh}
-            className="rounded-md bg-white/10 px-3 py-1.5 text-[11px] hover:bg-white/20 disabled:opacity-40"
+            className="rounded-xl border border-white/[0.08] bg-white/[0.05] px-3.5 py-2 text-[11.5px] font-medium text-slate-200 transition hover:bg-white/[0.10] disabled:opacity-40"
           >
             {busy === "index" ? "Fetching…" : "Refresh"}
           </button>
@@ -1193,19 +1335,19 @@ function AutomationsTab({
         {cfg.profiles.map((profile) => (
           <div
             key={profile.name}
-            className="rounded-lg border border-[var(--glacier-border)] bg-white/5 p-2.5"
+            className="rounded-xl border border-white/[0.07] bg-[#111827]/80 p-3"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 text-[11px] font-medium">
-                <span className="size-2 rounded-full" style={{ background: profile.color }} />
+              <span className="flex items-center gap-2 text-[12px] font-medium text-slate-100">
+                <span className="size-2.5 rounded-full" style={{ background: profile.color }} />
                 {profile.name}
               </span>
               <button
                 type="button"
                 onClick={() => invoke("set_profile", { name: profile.name }).catch(() => {})}
-                className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] hover:bg-white/20"
+                className="rounded-lg border border-white/[0.08] bg-white/[0.06] px-2.5 py-1 text-[10.5px] font-medium text-slate-200 transition hover:bg-white/[0.12]"
               >
-                activate
+                Activate
               </button>
             </div>
             <input
@@ -1227,7 +1369,7 @@ function AutomationsTab({
                   ),
                 )
               }
-              className="mt-1.5 w-full rounded border border-[var(--glacier-border)] bg-black/25 px-2 py-1 font-mono text-[10px] outline-none focus:border-[var(--glacier-accent)]"
+              className="mt-2 w-full rounded-lg border border-white/[0.08] bg-[#090d16] px-2.5 py-1.5 font-mono text-[11px] text-slate-200 outline-none focus:border-[var(--glacier-accent)]"
             />
           </div>
         ))}

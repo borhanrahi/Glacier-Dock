@@ -5,6 +5,7 @@
  */
 
 import { Suspense, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 
@@ -36,10 +37,15 @@ export default function WidgetFlyoutWindow() {
       }
     };
     // This is a separate, focused window: a click on another widget, the dock
-    // or the desktop blurs it. Auto-hide here so the flyout never lingers.
-    // A second widget's `open_widget` re-shows the same window and swaps the
-    // id, and useWindowMotion cancels this pending hide.
-    const onBlur = () => dismiss();
+    // or the desktop blurs it. Auto-hide here so the flyout never lingers,
+    // except while Windows Snipping Tool / Screen Clipping steals focus.
+    const onBlur = () => {
+      invoke<boolean>("is_screen_capture_active")
+        .then((active) => {
+          if (!active) dismiss();
+        })
+        .catch(() => dismiss());
+    };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("blur", onBlur);
     return () => {

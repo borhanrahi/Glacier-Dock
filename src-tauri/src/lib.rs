@@ -663,31 +663,86 @@ fn preview_windows(pid: u32) -> serde_json::Value {
     }
 }
 
-/// Show a live DWM thumbnail of the first visible window owned by `pid`.
+/// Position a transient popup (preview or widget flyout) just above the dock bar on the active monitor.
 fn position_above_dock(window: &WebviewWindow, width: f64, height: f64, anchor_x: Option<f64>) {
     #[cfg(windows)]
     {
+        let mut cursor = windows::Win32::Foundation::POINT::default();
+        let cursor_monitor = unsafe {
+            windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut cursor)
+                .ok()
+                .and_then(|_| win32::monitors::monitor_for_point(cursor.x, cursor.y))
+        };
         let scale = window.scale_factor().unwrap_or(1.0);
         let pw = (width * scale).round() as i32;
         let ph = (height * scale).round() as i32;
         let monitors = win32::monitors::cached_monitors();
         let center_x = anchor_x.map(|x| (x * scale).round() as i32);
-        let monitor = center_x
-            .and_then(|cx| win32::monitors::monitor_for_point(cx, 100))
+        let monitor = cursor_monitor
+            .or_else(|| {
+                center_x.and_then(|cx| {
+                    monitors
+                        .iter()
+                        .find(|m| cx >= m.x && cx < m.x + m.width)
+                        .cloned()
+                })
+            })
             .or_else(|| monitors.iter().find(|m| m.primary).cloned())
             .or_else(|| monitors.first().cloned());
         if let Some(m) = monitor {
-            let desired_x = center_x.map(|cx| cx - pw / 2).unwrap_or(m.x + (m.width - pw) / 2);
+            let mut cfg = config::load(window.app_handle());
+            let dock = config::dock_for_monitor(&mut cfg, &m.device);
+            let (_, bar) = dock.size.metrics();
+            let margin = if dock.shape == config::Shape::Attached {
+                0.0
+            } else {
+                cfg.appearance.edge_margin.min(12.0)
+            };
+            let offset = ((bar + margin + 10.0) * m.scale).round() as i32;
+            let effective_cx = center_x
+                .filter(|&cx| cx >= m.x && cx < m.x + m.width)
+                .unwrap_or_else(|| {
+                    if cursor.x >= m.x && cursor.x < m.x + m.width {
+                        cursor.x
+                    } else {
+                        m.x + m.width / 2
+                    }
+                });
+            let desired_x = effective_cx - pw / 2;
             let min_x = m.x + 12;
             let max_x = (m.x + m.width - pw - 12).max(min_x);
             let x = desired_x.clamp(min_x, max_x);
-            let y = (m.y + m.height - ph - (90.0 * scale).round() as i32).max(m.y + 12);
+            let y = (m.y + m.height - ph - offset).max(m.y + 12);
             let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
         }
     }
     #[cfg(not(windows))]
     {
         let _ = (window, width, height, anchor_x);
+    }
+}
+
+#[tauri::command]
+fn is_screen_capture_active() -> bool {
+    #[cfg(windows)]
+    {
+        let fg = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+        if fg.0.is_null() {
+            return false;
+        }
+        let pid = win32::process_manager::pid_for_hwnd(fg.0 as isize);
+        if pid == 0 {
+            return false;
+        }
+        if let Some(name) = win32::process_manager::image_name(pid) {
+            let lower = name.to_ascii_lowercase();
+            return lower == "screenclippinghost.exe" || lower == "snippingtool.exe";
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 
@@ -1023,9 +1078,26 @@ async fn open_settings(app: AppHandle) {
     .decorations(true)
     .resizable(true)
     .transparent(false)
+    .background_color(tauri::window::Color(9, 13, 22, 255))
     .center()
     .build()
     {
+        #[cfg(windows)]
+        if let Ok(hwnd) = window.hwnd() {
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::Graphics::Dwm::{
+                DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE,
+            };
+            let dark: i32 = 1;
+            unsafe {
+                let _ = DwmSetWindowAttribute(
+                    HWND(hwnd.0),
+                    DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    &dark as *const i32 as *const _,
+                    std::mem::size_of::<i32>() as u32,
+                );
+            }
+        }
         emit_window_show(&app, "settings");
         let _ = window.show();
         let _ = window.set_focus();
@@ -1363,7 +1435,8 @@ pub fn run() {
             open_settings,
             open_widget,
             show_dock_menu,
-            show_app_menu
+            show_app_menu,
+            is_screen_capture_active
         ])
         .on_menu_event(|app, event| {
             let id = event.id().0.as_str();

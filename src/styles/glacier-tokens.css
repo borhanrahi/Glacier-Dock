@@ -165,10 +165,10 @@ html[data-glacier-preset="prism"] {
 
 :root {
   /* Shape + geometry, driven from Settings -> Appearance */
-  --glacier-radius: 20px;
-  --glacier-edge-margin: 10px;
-  --glacier-icon-base: 42px;
-  --glacier-bar-height: 58px;
+  --glacier-radius: 18px;
+  --glacier-edge-margin: 4px;
+  --glacier-icon-base: 38px;
+  --glacier-bar-height: 48px;
   --glacier-icon-scale: 1;
   --glacier-icon-lift: 0px;
   --glacier-backdrop-mode: "liquid-glass";
@@ -200,6 +200,60 @@ input,
 textarea,
 select {
   user-select: text;
+}
+
+/* Sleek dark scrollbars across Settings, App Library, and widget panels */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.22);
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* Custom modern range slider thumb for Settings controls */
+.glacier-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #f8fafc;
+  border: 2px solid var(--glacier-accent, #38bdf8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.glacier-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+
+/* Bleed-free obsidian glass surface for standalone floating panels */
+.glacier-panel-glass {
+  background:
+    radial-gradient(ellipse 85% 45% at 50% -10%, rgba(56, 189, 248, 0.13), transparent 65%),
+    linear-gradient(180deg, rgba(13, 18, 30, 0.96) 0%, rgba(8, 11, 19, 0.98) 100%);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  color: #f1f5f9;
 }
 
 /* Muelle + OpenTaskbar hybrid glass shell with Fresnel specular rim */

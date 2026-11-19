@@ -84,7 +84,7 @@ export default function BackgroundApps() {
   };
 
   return (
-    <div className="glacier-dock-glass relative flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl p-3 text-[var(--glacier-text)]">
+    <div className="glacier-panel-glass relative flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl p-3">
       <span className="glacier-dock-sheen" aria-hidden />
 
       {apps.length === 0 ? (

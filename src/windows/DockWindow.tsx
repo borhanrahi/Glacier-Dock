@@ -52,6 +52,7 @@ interface Appearance {
   solarNightPreset: string;
   chameleonTint: boolean;
   magnification?: number;
+  edgeMargin?: number;
 }
 
 interface AppConfig {
@@ -117,6 +118,7 @@ function AppIcon({ app }: { app: InstalledApp }) {
 }
 
 export default function DockWindow() {
+  const clusterRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
 
@@ -202,15 +204,15 @@ export default function DockWindow() {
       try {
         const next = await invoke<DockLayout>("dock_layout");
         setLayout(next);
+        if (next.accent) applyAccent(next.accent);
+
+        const cfg = await invoke<AppConfig>("get_config");
         applyDockMetrics({
           iconSize: next.iconSize,
           barHeight: next.barHeight,
           radius: next.shape === "attached" ? 0 : 18,
-          edgeMargin: next.shape === "attached" ? 0 : 10,
+          edgeMargin: next.shape === "attached" ? 0 : Math.min(12, cfg.appearance.edgeMargin ?? 4),
         });
-        if (next.accent) applyAccent(next.accent);
-
-        const cfg = await invoke<AppConfig>("get_config");
         applyPreset(next.highContrast ? "black" : cfg.appearance.preset);
         applyTintAlpha(cfg.appearance.tintAlpha);
         setWidgets(cfg.dockWidgets ?? []);
@@ -356,7 +358,7 @@ export default function DockWindow() {
             iconSize: next.iconSize,
             barHeight: next.barHeight,
             radius: next.shape === "attached" ? 0 : 18,
-            edgeMargin: next.shape === "attached" ? 0 : 10,
+            edgeMargin: next.shape === "attached" ? 0 : Math.min(12, cfg.appearance.edgeMargin ?? 4),
           });
         })
         .catch(() => {});
@@ -370,8 +372,8 @@ export default function DockWindow() {
   const vertical = edge === "left" || edge === "right";
   const attached = layout?.shape === "attached";
   const full = layout?.widthMode === "full";
-  const barHeight = layout?.barHeight ?? 52;
-  const baseIconSize = layout?.iconSize ?? 42;
+  const barHeight = layout?.barHeight ?? 48;
+  const baseIconSize = layout?.iconSize ?? 38;
   const crossPad = Math.max(4, Math.round((barHeight - baseIconSize) / 2));
   const maxMag = magnification;
   const maxGrowPx =
@@ -386,8 +388,6 @@ export default function DockWindow() {
   const overlayOpen =
     contextMenu !== null ||
     surfaceMenuX !== null ||
-    (shelfOpen && shelf.length > 0) ||
-    island !== null ||
     folderOpen ||
     aiOpen;
   overlayOpenRef.current = overlayOpen;
@@ -418,26 +418,32 @@ export default function DockWindow() {
   );
 
   useEffect(() => {
-    window.addEventListener("blur", clearDockHover);
+    const onLeave = () => clearDockHover();
+    window.addEventListener("blur", onLeave);
+    let unlisten: (() => void) | undefined;
+    listen("glacier://dock-leave", onLeave)
+      .then((fn) => (unlisten = fn))
+      .catch(() => {});
     return () => {
-      window.removeEventListener("blur", clearDockHover);
+      window.removeEventListener("blur", onLeave);
+      unlisten?.();
       if (pointerRafRef.current !== null) cancelAnimationFrame(pointerRafRef.current);
     };
   }, [clearDockHover]);
 
-  // Report resting pill rect only when settled (never during hover magnification).
+  // Report resting dock cluster rect only when settled (never during hover magnification).
   useEffect(() => {
     if (dockHovered) {
       wasHoveredRef.current = true;
       return;
     }
-    const pill = pillRef.current;
-    if (!pill) return;
+    const target = clusterRef.current ?? pillRef.current;
+    if (!target) return;
     let rafId: number | undefined;
     let settleTimer: number | undefined;
 
     const measureAndReport = () => {
-      const rect = pill.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
       restRectRef.current = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       const prev = lastReportedPillRef.current;
       if (
@@ -475,7 +481,7 @@ export default function DockWindow() {
 
     if (wasHoveredRef.current) {
       wasHoveredRef.current = false;
-      settleTimer = window.setTimeout(scheduleMeasure, 220);
+      settleTimer = window.setTimeout(scheduleMeasure, 160);
     } else {
       scheduleMeasure();
     }
@@ -495,11 +501,13 @@ export default function DockWindow() {
     showTelemetryRings,
     showAiUsage,
     showQuickFolders,
+    island !== null,
+    shelfOpen && shelf.length > 0,
   ]);
 
-  // Decoupled interactive hit-rect for hover magnification, tooltips, and popovers.
+  // Decoupled interactive hit-rect for hover magnification and popovers.
   useEffect(() => {
-    let timer: number | undefined;
+    let rafId: number | undefined;
     const clampHit = (x1: number, y1: number, x2: number, y2: number) => {
       const cx1 = Math.max(0, Math.floor(x1));
       const cy1 = Math.max(0, Math.floor(y1));
@@ -523,23 +531,23 @@ export default function DockWindow() {
       const rect =
         restRectRef.current.width > 0
           ? restRectRef.current
-          : pillRef.current?.getBoundingClientRect();
+          : (clusterRef.current ?? pillRef.current)?.getBoundingClientRect();
       if (!rect || rect.width <= 0) return;
 
       if (dockHovered) {
-        const headPad = maxGrowPx + 36;
-        const mainPad = Math.ceil(baseIconSize * 2.2);
+        const headPad = Math.ceil(maxGrowPx);
+        const mainPad = Math.ceil(maxGrowPx * 2.2);
         if (edge === "bottom") {
-          clampHit(rect.x - mainPad, rect.y - headPad, rect.x + rect.width + mainPad, rect.y + rect.height + 6);
+          clampHit(rect.x - mainPad, rect.y - headPad, rect.x + rect.width + mainPad, rect.y + rect.height);
         } else if (edge === "top") {
-          clampHit(rect.x - mainPad, rect.y - 6, rect.x + rect.width + mainPad, rect.y + rect.height + headPad);
+          clampHit(rect.x - mainPad, rect.y, rect.x + rect.width + mainPad, rect.y + rect.height + headPad);
         } else if (edge === "left") {
-          clampHit(rect.x - 6, rect.y - mainPad, rect.x + rect.width + headPad, rect.y + rect.height + mainPad);
+          clampHit(rect.x, rect.y - mainPad, rect.x + rect.width + headPad, rect.y + rect.height + mainPad);
         } else {
-          clampHit(rect.x - headPad, rect.y - mainPad, rect.x + rect.width + 6, rect.y + rect.height + mainPad);
+          clampHit(rect.x - headPad, rect.y - mainPad, rect.x + rect.width, rect.y + rect.height + mainPad);
         }
       } else {
-        clampHit(rect.x - 4, rect.y - 4, rect.x + rect.width + 4, rect.y + rect.height + 4);
+        clampHit(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height);
       }
     };
 
@@ -548,15 +556,27 @@ export default function DockWindow() {
       applyHoverOrRestHit();
     } else if (wasHitHoveredRef.current) {
       wasHitHoveredRef.current = false;
-      timer = window.setTimeout(applyHoverOrRestHit, 200);
+      applyHoverOrRestHit();
     } else {
-      timer = window.setTimeout(applyHoverOrRestHit, 32);
+      rafId = requestAnimationFrame(() => {
+        rafId = undefined;
+        applyHoverOrRestHit();
+      });
     }
 
     return () => {
-      if (timer !== undefined) window.clearTimeout(timer);
+      if (rafId !== undefined) cancelAnimationFrame(rafId);
     };
-  }, [dockHovered, overlayOpen, edge, maxGrowPx, baseIconSize, layout]);
+  }, [
+    dockHovered,
+    overlayOpen,
+    edge,
+    maxGrowPx,
+    baseIconSize,
+    layout,
+    island !== null,
+    shelfOpen && shelf.length > 0,
+  ]);
 
   const openCommand = useCallback(
     (cmd: string, args?: Record<string, unknown>, el?: HTMLElement | null) => {
@@ -682,56 +702,46 @@ export default function DockWindow() {
   };
 
   return (
-    <div className={`flex h-full w-full ${EDGE_ALIGN[edge]}`}>
-      <GlacierIsland
-        notification={island}
-        onDismiss={() => setIsland(null)}
-        onReply={() => setIsland(null)}
-      />
-      <DropzoneShelf
-        items={shelf}
-        open={shelfOpen && shelf.length > 0}
-        onRemove={(path) => setShelf((items) => items.filter((item) => item.path !== path))}
-        onClear={() => {
-          setShelf([]);
-          setShelfOpen(false);
-        }}
-        onReveal={() => {}}
-      />
-
+    <div className={`pointer-events-none flex h-full w-full ${EDGE_ALIGN[edge]}`}>
       <div
-        ref={pillRef}
-        onPointerMove={onPillPointerMove}
-        onPointerLeave={clearDockHover}
-        onPointerDown={onPillPointerDown}
-        onContextMenu={(event) => {
-          const target = event.target as HTMLElement;
-          if (target.closest("[data-app-icon]")) return;
-          event.preventDefault();
-          invoke("show_dock_menu").catch(() => setSurfaceMenuX(event.clientX));
-        }}
-        className={`glacier-dock-glass relative flex ${dockCrossAlign} gap-2 overflow-visible ${
-          draggingDock ? "ring-2 ring-[var(--glacier-accent)]" : ""
-        }`}
-        style={pillStyle}
+        ref={clusterRef}
+        className={`pointer-events-auto flex ${dockCrossAlign} ${
+          vertical ? "flex-col" : "flex-row"
+        } ${full ? (vertical ? "h-full" : "w-full") : ""}`}
       >
-        {dockHovered && (
-          <span
-            aria-hidden
-            data-no-drag
-            className="pointer-events-auto absolute z-0"
-            style={
-              edge === "bottom"
-                ? { top: -maxGrowPx, left: -16, right: -16, height: maxGrowPx + barHeight }
-                : edge === "top"
-                  ? { bottom: -maxGrowPx, left: -16, right: -16, height: maxGrowPx + barHeight }
-                  : edge === "left"
-                    ? { right: -maxGrowPx, top: -16, bottom: -16, width: maxGrowPx + barHeight }
-                    : { left: -maxGrowPx, top: -16, bottom: -16, width: maxGrowPx + barHeight }
-            }
-          />
-        )}
-        {!attached && edge === "bottom" && <span className="glacier-dock-sheen" aria-hidden />}
+        <GlacierIsland
+          notification={island}
+          onDismiss={() => setIsland(null)}
+          onReply={() => setIsland(null)}
+        />
+        <DropzoneShelf
+          items={shelf}
+          open={shelfOpen && shelf.length > 0}
+          onRemove={(path) => setShelf((items) => items.filter((item) => item.path !== path))}
+          onClear={() => {
+            setShelf([]);
+            setShelfOpen(false);
+          }}
+          onReveal={() => {}}
+        />
+
+        <div
+          ref={pillRef}
+          onPointerMove={onPillPointerMove}
+          onPointerLeave={clearDockHover}
+          onPointerDown={onPillPointerDown}
+          onContextMenu={(event) => {
+            const target = event.target as HTMLElement;
+            if (target.closest("[data-app-icon]")) return;
+            event.preventDefault();
+            invoke("show_dock_menu").catch(() => setSurfaceMenuX(event.clientX));
+          }}
+          className={`glacier-dock-glass relative flex ${dockCrossAlign} gap-2 overflow-visible ${
+            draggingDock ? "ring-2 ring-[var(--glacier-accent)]" : ""
+          }`}
+          style={pillStyle}
+        >
+          {!attached && edge === "bottom" && <span className="glacier-dock-sheen" aria-hidden />}
 
         <div
           ref={rowRef}
@@ -1067,6 +1077,7 @@ export default function DockWindow() {
             </div>
           </>
         )}
+        </div>
       </div>
 
       <AnimatePresence>

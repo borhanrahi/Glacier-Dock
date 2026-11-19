@@ -12,6 +12,8 @@
 //! Frames are pulled by the webview (`glass_frame`) after a tiny `glass-frame`
 //! event, so no pixels ever travel through JSON.
 
+#![allow(dead_code)]
+
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 

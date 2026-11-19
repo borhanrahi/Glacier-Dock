@@ -1,10 +1,11 @@
-//! Shell icon extraction.
+//! High-DPI shell icon extraction without `.lnk` shortcut arrows.
 //!
-//! Shortcuts on disk have no image payload of their own, so the shell asks the
-//! target executable for its icon. `SHGetFileInfoW` gives us that `HICON`; we
-//! rasterise it to RGBA, encode a PNG and hand the webview a `data:` URL it can
-//! drop straight into an `<img src>`. Results are cached per path because the
-//! dock repaints often.
+//! Shortcuts on disk have no image payload of their own, so we resolve the pure
+//! system image-list index via `SHGetFileInfoW(..., SHGFI_SYSICONINDEX)` (no
+//! `SHGFI_LINKOVERLAY`) and pull the crisp 256×256 `SHIL_JUMBO` icon (falling
+//! back to 48×48 `SHIL_EXTRALARGE` if a legacy app only supplies a small icon in
+//! the top-left corner of the jumbo bitmap). `GetDIBits` yields `BGRA` pixels,
+//! so Blue and Red are swapped to `RGBA` before PNG encoding.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -15,13 +16,17 @@ use windows::Win32::Graphics::Gdi::{
     BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HGDIOBJ,
 };
 use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
-use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
-use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyIcon, GetIconInfo, HICON, ICONINFO,
+use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+use windows::Win32::UI::Controls::IImageList;
+use windows::Win32::UI::Shell::{
+    SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SYSICONINDEX,
+    SHIL_EXTRALARGE, SHIL_JUMBO,
 };
+use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
 
 /// Icons larger than this are ignored rather than shoved into the webview.
 const MAX_PX: u32 = 256;
+const ILD_TRANSPARENT: u32 = 0x0000_0001;
 
 fn cache() -> &'static Mutex<HashMap<String, Option<String>>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -30,14 +35,15 @@ fn cache() -> &'static Mutex<HashMap<String, Option<String>>> {
 
 /// PNG data URL for a shortcut/executable, or `None` when the shell has no icon.
 pub fn icon_data_url(path: &str) -> Option<String> {
+    let key = path.to_ascii_lowercase();
     if let Ok(cache) = cache().lock() {
-        if let Some(hit) = cache.get(path) {
+        if let Some(hit) = cache.get(&key) {
             return hit.clone();
         }
     }
     let rendered = unsafe { render(path) };
     if let Ok(mut cache) = cache().lock() {
-        cache.insert(path.to_string(), rendered.clone());
+        cache.insert(key, rendered.clone());
     }
     rendered
 }
@@ -46,29 +52,65 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+unsafe fn extract_from_list(list_id: u32, icon_index: i32, reject_jumbo_corner: bool) -> Option<String> {
+    let list: IImageList = unsafe { SHGetImageList(list_id as i32) }.ok()?;
+    let hicon = unsafe { list.GetIcon(icon_index, ILD_TRANSPARENT) }.ok()?;
+    if hicon.is_invalid() {
+        return None;
+    }
+    let png = unsafe { bitmap_to_png(hicon, reject_jumbo_corner) };
+    let _ = unsafe { DestroyIcon(hicon) };
+    png
+}
+
 unsafe fn render(path: &str) -> Option<String> {
+    let com_ok = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }.is_ok();
     let file = wide(path);
+
     let mut info = SHFILEINFOW::default();
-    let ok = unsafe {
+    let idx_ok = unsafe {
         SHGetFileInfoW(
             PCWSTR(file.as_ptr()),
             FILE_FLAGS_AND_ATTRIBUTES(0),
             Some(&mut info),
             std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_ICON | SHGFI_LARGEICON,
+            SHGFI_SYSICONINDEX,
         )
     };
-    if ok == 0 || info.hIcon.is_invalid() {
-        return None;
-    }
 
-    let hicon = info.hIcon;
-    let png = unsafe { bitmap_to_png(hicon) };
-    let _ = unsafe { DestroyIcon(hicon) };
-    png
+    let result = if idx_ok != 0 {
+        let icon_index = info.iIcon;
+        unsafe { extract_from_list(SHIL_JUMBO, icon_index, true) }
+            .or_else(|| unsafe { extract_from_list(SHIL_EXTRALARGE, icon_index, false) })
+    } else {
+        None
+    }
+    .or_else(|| {
+        let mut fallback = SHFILEINFOW::default();
+        let ok = unsafe {
+            SHGetFileInfoW(
+                PCWSTR(file.as_ptr()),
+                FILE_FLAGS_AND_ATTRIBUTES(0),
+                Some(&mut fallback),
+                std::mem::size_of::<SHFILEINFOW>() as u32,
+                SHGFI_ICON | SHGFI_LARGEICON,
+            )
+        };
+        if ok == 0 || fallback.hIcon.is_invalid() {
+            return None;
+        }
+        let png = unsafe { bitmap_to_png(fallback.hIcon, false) };
+        let _ = unsafe { DestroyIcon(fallback.hIcon) };
+        png
+    });
+
+    if com_ok {
+        unsafe { CoUninitialize() };
+    }
+    result
 }
 
-unsafe fn bitmap_to_png(hicon: HICON) -> Option<String> {
+unsafe fn bitmap_to_png(hicon: HICON, reject_jumbo_corner: bool) -> Option<String> {
     let mut icon = ICONINFO::default();
     unsafe { GetIconInfo(hicon, &mut icon) }.ok()?;
 
@@ -83,7 +125,7 @@ unsafe fn bitmap_to_png(hicon: HICON) -> Option<String> {
         return None;
     }
 
-    let result = unsafe { dib_to_png(source) };
+    let result = unsafe { dib_to_png(source, reject_jumbo_corner) };
 
     if !color.is_invalid() {
         let _ = unsafe { DeleteObject(HGDIOBJ(color.0)) };
@@ -94,7 +136,10 @@ unsafe fn bitmap_to_png(hicon: HICON) -> Option<String> {
     result
 }
 
-unsafe fn dib_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<String> {
+unsafe fn dib_to_png(
+    bitmap: windows::Win32::Graphics::Gdi::HBITMAP,
+    reject_jumbo_corner: bool,
+) -> Option<String> {
     let mut header = BITMAP::default();
     let read = unsafe {
         GetObjectW(
@@ -144,6 +189,11 @@ unsafe fn dib_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<S
         return None;
     }
 
+    // Windows 32-bit BI_RGB DIBs store channels as BGRA; swap B and R for RGBA PNG encoding.
+    for px in pixels.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
+
     // Icons without an alpha channel come back opaque; treat pure black as the
     // transparent key so they do not paint a black square onto the dock.
     let has_alpha = pixels.chunks_exact(4).any(|px| px[3] != 0);
@@ -151,6 +201,30 @@ unsafe fn dib_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<S
         for px in pixels.chunks_exact_mut(4) {
             let transparent = px[0] == 0 && px[1] == 0 && px[2] == 0;
             px[3] = if transparent { 0 } else { 255 };
+        }
+    }
+
+    // Legacy apps without a 256px resource get drawn as a tiny 32/48px icon in
+    // the top-left quadrant of SHIL_JUMBO; reject those and fall back to 48px.
+    if reject_jumbo_corner && width >= 128 {
+        let mut any_opaque = false;
+        let mut max_x = 0u32;
+        let mut max_y = 0u32;
+        for (idx, px) in pixels.chunks_exact(4).enumerate() {
+            if px[3] > 8 {
+                any_opaque = true;
+                let x = (idx as u32) % width;
+                let y = (idx as u32) / width;
+                if x > max_x {
+                    max_x = x;
+                }
+                if y > max_y {
+                    max_y = y;
+                }
+            }
+        }
+        if !any_opaque || (max_x < 72 && max_y < 72) {
+            return None;
         }
     }
 
@@ -186,4 +260,3 @@ fn base64(bytes: &[u8]) -> String {
     }
     out
 }
-

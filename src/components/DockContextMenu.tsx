@@ -82,7 +82,7 @@ export function DockContextMenu({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 4, scale: 0.97, transition: { duration: 0.1 } }}
       transition={MAC_POPOVER_SPRING}
-      className="glacier-dock-glass fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px] will-change-transform"
+      className="glacier-dock-glass pointer-events-auto fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px] will-change-transform"
       style={{ left }}
     >
       <span className="glacier-dock-sheen" aria-hidden />
@@ -229,7 +229,7 @@ export function DockSurfaceMenu({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 4, scale: 0.97, transition: { duration: 0.1 } }}
       transition={MAC_POPOVER_SPRING}
-      className="glacier-dock-glass fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px] will-change-transform"
+      className="glacier-dock-glass pointer-events-auto fixed bottom-[calc(var(--glacier-bar-height)+var(--glacier-edge-margin)+12px)] z-50 w-[220px] overflow-hidden rounded-[14px] p-1.5 text-[12px] will-change-transform"
       style={{ left }}
     >
       <span className="glacier-dock-sheen" aria-hidden />
